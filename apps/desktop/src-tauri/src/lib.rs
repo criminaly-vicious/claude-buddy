@@ -108,6 +108,7 @@ pub fn run() {
         win::set_hit_regions,
         win::overlay_expand,
         win::overlay_restore,
+        win::set_overlay_content_size,
         win::get_overlay_anchor,
         win::set_overlay_anchor,
         get_sessions,
@@ -118,6 +119,7 @@ pub fn run() {
         win::set_hit_regions,
         win::overlay_expand,
         win::overlay_restore,
+        win::set_overlay_content_size,
         win::get_overlay_anchor,
         win::set_overlay_anchor,
         get_sessions
