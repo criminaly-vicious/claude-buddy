@@ -1,5 +1,5 @@
 //! Tray icon and menu (#27): show or hide the buddies, install, repair or
-//! uninstall the Claude Code hooks, settings (#28), quit.
+//! uninstall the Claude Code hooks, open the settings window, quit.
 //!
 //! Hook actions run on their own thread: they show blocking dialogs and
 //! touch the disk, and the tray's event handler runs on the main thread.
@@ -38,8 +38,7 @@ pub fn setup(app: &tauri::App) -> tauri::Result<()> {
     let toggle = MenuItem::with_id(app, TOGGLE, "Hide buddies", true, None::<&str>)?;
     let install = MenuItem::with_id(app, INSTALL, "Install / repair hooks…", true, None::<&str>)?;
     let uninstall = MenuItem::with_id(app, UNINSTALL, "Uninstall hooks…", true, None::<&str>)?;
-    // The settings window comes with #28.
-    let settings = MenuItem::with_id(app, SETTINGS, "Settings (coming soon)", false, None::<&str>)?;
+    let settings = MenuItem::with_id(app, SETTINGS, "Settings…", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, QUIT, "Quit Claude Buddy", true, None::<&str>)?;
     let menu = Menu::with_items(
         app,
@@ -65,6 +64,7 @@ pub fn setup(app: &tauri::App) -> tauri::Result<()> {
             }
             INSTALL => run_hook_action(app, Action::Install),
             UNINSTALL => run_hook_action(app, Action::Uninstall),
+            SETTINGS => crate::settings::open(app),
             QUIT => app.exit(0),
             _ => {}
         });
@@ -138,7 +138,7 @@ fn run_hook_action(app: &AppHandle, action: Action) {
 }
 
 /// Where the settings, the hook binary and the bridge file are.
-fn hook_actions() -> Result<HookActions, String> {
+pub(crate) fn hook_actions() -> Result<HookActions, String> {
     let settings = crate::installer::default_settings_path()
         .ok_or("Could not find the Claude Code configuration folder.")?;
     let exe = std::env::current_exe().map_err(|e| format!("Could not locate Claude Buddy: {e}"))?;

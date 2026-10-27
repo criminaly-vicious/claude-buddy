@@ -28,6 +28,8 @@ pub enum Input {
         session_id: String,
         pid: u32,
     },
+    /// Recompute timers, e.g. after the idle timeout changed.
+    Wake,
     Shutdown,
 }
 
@@ -180,7 +182,7 @@ fn drive(
                     Vec::new()
                 }
                 Some(Input::Shutdown) => return,
-                None => Vec::new(),
+                Some(Input::Wake) | None => Vec::new(),
             };
             changes.extend(registry.tick(clock()));
             changes

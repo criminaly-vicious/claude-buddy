@@ -148,6 +148,18 @@ describe("AnimationController", () => {
     expect(timeline(c, 0, 120_000)).toEqual(["spawn", "idle"]);
   });
 
+  it("reduce motion can change at runtime", () => {
+    const c = controller("idle", 0, () => 0, false);
+    const idleStart = ms("spawn");
+    // Extras off before the first one is due: none follow.
+    c.setReduceMotion(true, idleStart + 1_000);
+    expect(timeline(c, idleStart + 1_000, 120_000)).toEqual(["idle"]);
+    // Back on at t=60 s: the next extra is 8 s (roll 0) later.
+    c.setReduceMotion(false, 60_000);
+    expect(c.current(60_000).nextChangeAt).toBeLessThanOrEqual(68_000);
+    expect(c.current(68_000).clip).toBe("idle_look");
+  });
+
   it("is continuous: the result does not depend on how often it is asked", () => {
     const sparse = controller("spawning");
     const dense = controller("spawning");

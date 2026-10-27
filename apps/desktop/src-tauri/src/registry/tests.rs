@@ -71,6 +71,28 @@ fn view_has_project_cwd_and_pid() {
 }
 
 #[test]
+fn remembers_the_last_hook_event_only() {
+    let mut registry = Registry::new(config());
+    assert_eq!(registry.last_hook_event_at(), None);
+    registry.apply(event_from(
+        Source::Transcript,
+        50,
+        EventKind::SessionStarted,
+    ));
+    assert_eq!(registry.last_hook_event_at(), None);
+    registry.apply(event(70, tool("Read")));
+    assert_eq!(registry.last_hook_event_at(), Some(70));
+}
+
+#[test]
+fn idle_timeout_can_change_while_running() {
+    let mut registry = idle_registry(); // idle since t=1000, timeout 10 s
+    registry.set_idle_timeout(2_000);
+    registry.tick(3_000);
+    assert_eq!(state(&registry), BuddyState::Sleeping);
+}
+
+#[test]
 fn pid_lookup_for_window_focus() {
     let registry = idle_registry();
     assert_eq!(registry.pid(ID), Some(4242));
