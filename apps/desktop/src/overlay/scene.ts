@@ -94,6 +94,15 @@ export class Scene {
     return this.buddies.size;
   }
 
+  /** The session behind a buddy, for the hover card. */
+  view(id: string): SessionView | undefined {
+    return this.buddies.get(id)?.view;
+  }
+
+  get currentCorner(): Corner {
+    return this.corner;
+  }
+
   setCorner(corner: Corner): void {
     this.corner = corner;
   }

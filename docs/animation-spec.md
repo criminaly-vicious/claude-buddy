@@ -83,6 +83,13 @@ While a buddy is in the air the overlay temporarily grows to full screen and shr
   - `Edit · src/overlay/physics.ts`
 - Card is the only clickable-through exception besides the buddies.
 
+Implemented in `apps/desktop/src/overlay/hoverCard.ts`:
+- **Lines:** `<project> · <state label> · <elapsed>`, then the tool summary (or the tool name), then "Approximate: install hooks for exact states" for transcript-only sessions.
+- **Sanitising:** lines are cut to 80 Unicode code points with `…`, and control characters are replaced, a second barrier after the backend's sanitising.
+- **Timing:** the card opens after 300 ms on one buddy and stays open while the pointer is on the buddy or the card. The elapsed time redraws once per second, only while the card is open.
+- **Placement:** the card sits on the side away from the screen edge (above in bottom corners), aligned with the buddy's outer side, and stays inside the overlay. The window grows to make room for it. While open, the card is a hit region.
+- **Leaving:** in the app, the backend's `overlay:pointer` event says when the pointer left every region, since the click-through window no longer sees it.
+
 ## Accessibility & comfort
 
 - Option to reduce motion (no random idle extras, no screen shake).
