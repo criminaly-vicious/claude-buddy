@@ -6,16 +6,22 @@ By contributing you agree your work is licensed under Apache-2.0 and that you fo
 
 ## Setup
 
-Requirements: Windows 10/11, Node 20+, Rust stable, pnpm.
-
-> The project is not scaffolded yet. The commands below are placeholders; once scaffolded, see the issue tracker.
+Requirements: Windows 10/11 with WebView2 (preinstalled on Windows 11), Node 20+, pnpm 10 (`corepack enable`), Rust stable with the MSVC toolchain, and the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) (Microsoft C++ Build Tools).
 
 ```bash
-pnpm install      # install JS dependencies
-pnpm tauri dev    # run the app in dev mode
-pnpm test         # frontend tests
-cargo test        # Rust core tests
+pnpm install                 # install JS dependencies
+pnpm tauri dev               # run the app (overlay window) in dev mode
+pnpm dev:mock                # run the overlay in a browser with a fake session feed
+pnpm lint                    # ESLint + TypeScript type check
+pnpm test                    # Vitest
+cargo test --workspace       # Rust tests (desktop core + buddy-hook)
+cargo clippy --workspace --all-targets -- -D warnings
+cargo fmt --all --check
 ```
+
+Layout: `apps/desktop` (Vite + TypeScript frontend, `src-tauri/` Rust core), `crates/buddy-hook` (hook CLI). See [docs/architecture.md](docs/architecture.md#repository-layout-planned).
+
+Building on Linux works for tests and lint (install `libwebkit2gtk-4.1-dev`, `libsoup-3.0-dev`, `librsvg2-dev`), but the app targets Windows only for now.
 
 ## Workflow
 
