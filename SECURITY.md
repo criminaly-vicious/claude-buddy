@@ -3,7 +3,7 @@
 ## Design principles
 
 - **Local only.** The hook server binds to `127.0.0.1` and never listens on other interfaces.
-- **Per-install token.** Each install generates a random token; hook requests without it are rejected.
+- **Random token.** Each time the app starts it generates a new random token, readable only by your user account; hook requests without it are rejected.
 - **No telemetry.** Claude Buddy sends nothing off your machine.
 - **Minimal data.** It reads only what is needed to derive session state and a short status summary. It does not store or transmit prompt contents.
 
