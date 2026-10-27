@@ -24,7 +24,7 @@
 - Drag and throw with simple physics (gravity, bounce, floor/walls = screen edges), then walk back to the group.
 
 **Settings**
-- Corner, monitor, buddy scale (1x/2x/3x), start with Windows, hotkey, idle-to-sleep timeout, reduce motion; hook status. Saved in `config.json` and applied live ([architecture](architecture.md#app-config)).
+- Corner, monitor, buddy scale (1x/2x/3x), start with Windows, show/hide hotkey (default Ctrl+Alt+B), idle-to-sleep timeout, reduce motion; hook status. Saved in `config.json` and applied live ([architecture](architecture.md#app-config)).
 
 ## Later (post-MVP)
 
