@@ -1,5 +1,4 @@
-//! Claude Buddy desktop core. Windows integration modules are added by their
-//! own issues (see docs/backlog.md).
+//! Claude Buddy desktop core.
 
 pub mod bridge;
 pub mod claude_dir;
@@ -7,14 +6,16 @@ pub mod installer;
 pub mod liveness;
 pub mod registry;
 pub mod watcher;
+pub mod win;
 
 use std::sync::{Arc, Mutex};
 
-use tauri::{Emitter, Manager, RunEvent};
+use tauri::{Emitter, Manager, RunEvent, WindowEvent};
 
 use bridge::Bridge;
 use registry::{Change, Registry, EVENT_REMOVE, EVENT_SNAPSHOT, EVENT_UPDATE};
 use watcher::TranscriptWatcher;
+use win::Overlay;
 
 type SharedRegistry = Arc<Mutex<Registry>>;
 
@@ -71,6 +72,9 @@ pub fn run() {
         .manage(Mutex::new(None::<Bridge>))
         .manage(Mutex::new(None::<TranscriptWatcher>))
         .setup(move |app| {
+            let overlay = Overlay::setup(app)?;
+            app.manage(overlay);
+
             let handle = app.handle().clone();
             let emit = move |change: Change| {
                 let _ = match change {
@@ -89,12 +93,33 @@ pub fn run() {
             let snapshot = registry.lock().map(|r| r.snapshot()).unwrap_or_default();
             let _ = app.emit(EVENT_SNAPSHOT, snapshot);
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            // Moving to a monitor with another DPI: re-anchor at the new scale.
+            if let WindowEvent::ScaleFactorChanged { .. } = event {
+                if let Some(overlay) = window.try_state::<Arc<Overlay>>() {
+                    let _ = overlay.place();
+                }
+            }
         });
 
     #[cfg(debug_assertions)]
     let builder = builder.invoke_handler(tauri::generate_handler![
+        win::set_hit_regions,
+        win::overlay_expand,
+        win::overlay_restore,
+        win::get_overlay_anchor,
+        win::set_overlay_anchor,
         debug_sessions,
         debug_hook_install_plan
+    ]);
+    #[cfg(not(debug_assertions))]
+    let builder = builder.invoke_handler(tauri::generate_handler![
+        win::set_hit_regions,
+        win::overlay_expand,
+        win::overlay_restore,
+        win::get_overlay_anchor,
+        win::set_overlay_anchor
     ]);
 
     builder

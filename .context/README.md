@@ -41,3 +41,4 @@ Shared memory for humans and AI agents. Kept small and current.
 | [0008](decisions/0008-merge-commits.md) | Merge commits instead of squash | Accepted |
 | [0009](decisions/0009-tiny-http-bridge-server.md) | tiny_http for the bridge server | Accepted |
 | [0010](decisions/0010-notify-transcript-watcher.md) | notify for the transcript watcher | Accepted |
+| [0011](decisions/0011-overlay-click-through.md) | Overlay click-through via a low-level mouse hook | Accepted |
