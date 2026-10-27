@@ -6,12 +6,13 @@ Shared memory for humans and AI agents. Kept small and current.
 .context/
   README.md          this file: how agents collaborate
   agents/            one brief per role (ownership, inputs, outputs, checklists)
+  sessions.md        live registry of agent sessions (id, role, branch, status)
   decisions/         ADRs, numbered, never deleted (superseded instead)
 ```
 
 ## How agents collaborate
 
-1. The **master agent** ([brief](agents/master.md)) owns planning: keeps `docs/roadmap.md` and `docs/backlog.md` in sync with GitHub issues, splits work, and assigns issues to role agents.
+1. The **master agent** ([brief](agents/master.md), loop in `.claude/skills/master/SKILL.md`) owns planning: keeps `docs/roadmap.md` and `docs/backlog.md` in sync with GitHub issues, splits work, and assigns issues to role agents.
 2. A role agent takes **one issue**, creates its branch from `develop` (`<type>/<issue>-<description>`, see `CONTRIBUTING.md#branch-naming`), reads the docs listed in its brief, and works only inside its area. Cross-area changes go back to the master as a new issue.
 3. Decisions made while working become ADRs in the same PR.
 4. The PR description lists what was done, what was verified, and open questions. The master (or a human) reviews and merges.
