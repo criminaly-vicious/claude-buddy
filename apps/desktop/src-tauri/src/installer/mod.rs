@@ -367,7 +367,7 @@ fn prune_backups(path: &Path, keep: usize) {
             Some((millis, entry.path()))
         })
         .collect();
-    backups.sort_unstable_by(|a, b| b.0.cmp(&a.0));
+    backups.sort_unstable_by_key(|backup| std::cmp::Reverse(backup.0));
     for (_, old) in backups.into_iter().skip(keep) {
         let _ = fs::remove_file(old);
     }
