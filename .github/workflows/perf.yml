@@ -1,12 +1,11 @@
 name: perf
 
 # Performance budget (docs/scope.md, #30). Report only: never a required
-# check. Runs by hand, on PRs labelled `perf`, and on PRs that change the
-# check itself.
+# check. Runs by hand and on PRs that change the check itself.
 on:
   workflow_dispatch:
   pull_request:
-    types: [opened, synchronize, reopened, labeled]
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: read
@@ -29,10 +28,9 @@ jobs:
       - id: decide
         env:
           EVENT: ${{ github.event_name }}
-          LABELLED: ${{ contains(github.event.pull_request.labels.*.name, 'perf') }}
           BASE: ${{ github.event.pull_request.base.sha }}
         run: |
-          if [ "$EVENT" != "pull_request" ] || [ "$LABELLED" = "true" ]; then
+          if [ "$EVENT" != "pull_request" ]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           elif git diff --name-only "$BASE"...HEAD | grep -qE '^(scripts/perf-budget\.ps1|\.github/workflows/perf\.yml)$'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
