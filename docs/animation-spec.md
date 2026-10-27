@@ -56,6 +56,12 @@ Implemented in `apps/desktop/src/overlay/controller.ts`:
 - A buddy in `waiting` steps 4 px forward so it stands out.
 - Slots are stable: a buddy keeps its slot until it leaves.
 
+Implemented in `apps/desktop/src/overlay/layout.ts` and `scene.ts`:
+- **Order:** creation order, oldest touching the corner, mirrored for left and top corners; "forward" means away from the screen edge.
+- **Leaving:** when a buddy leaves, the ones behind it play `walk` and move up one slot at 64 sprite px/s. Positions are kept in sprite pixels along the floor, so resizing the window or changing DPI never makes anyone walk.
+- **Overflow:** the 10 oldest stay visible and the newest go behind the chip. Hovering the chip shows everyone; the group collapses 1.5 s after the pointer leaves it. Hidden buddies reappear in place, without walking.
+- **Window size:** the overlay window resizes around the group from its corner (`set_overlay_content_size`), instead of keeping a fixed size.
+
 ## Interactions
 
 | Input | Behaviour |
