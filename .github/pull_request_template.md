@@ -18,7 +18,8 @@ Closes #
 ## Checklist
 
 - [ ] PR title is a conventional commit, e.g. `feat(anim): add idle blink`
-- [ ] Targets `develop` (`main` only for `hotfix/*`)
+- [ ] Branch is `<type>/<issue>-<description>` (see CONTRIBUTING.md#branch-naming)
+- [ ] Targets `develop` (`main` only for `release/*` and `hotfix/*`)
 - [ ] Tests added or updated and passing
 - [ ] Docs updated; ADR added in `.context/decisions/` if a decision was made
 - [ ] `CHANGELOG.md` updated under `[Unreleased]` if user-visible

@@ -20,18 +20,18 @@ cargo test        # Rust core tests
 ## Workflow
 
 1. **Issue** - every change starts from an issue (use the forms in `.github/ISSUE_TEMPLATE/`). Comment to claim it.
-2. **Branch** - from `develop`: `feature/<issue>-<slug>` or `fix/<issue>-<slug>` (e.g. `feature/12-tray-menu`).
+2. **Branch** - from `develop`, named `<type>/<issue>-<description>` (e.g. `feature/27-tray-menu`). See [Branch naming](#branch-naming).
 3. **Commits** - small, Conventional Commits, referencing the issue.
 4. **PR** - target `develop`, fill in the template, title is a conventional commit.
 5. **Review** - at least one approval, CI green, conversations resolved.
-6. **Merge** - squash merge; the PR title becomes the commit message.
+6. **Merge** - merge commit, never squash or rebase (ADR-0008); the PR title becomes the merge commit title.
 
 ## Commit convention
 
 [Conventional Commits 1.0](https://www.conventionalcommits.org/en/v1.0.0/): `type(scope): subject`
 
 - Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`
-- Scopes: `core`, `bridge`, `hooks`, `ui`, `anim`, `tray`, `win`, `docs`, `ci`, `deps`
+- Scopes: `core`, `bridge`, `hooks`, `ui`, `anim`, `tray`, `win`, `docs`, `ci`, `deps`, `release`
 - Subject: imperative, lowercase, no trailing period, under 72 chars.
 - Breaking changes: `feat(bridge)!:` and/or a `BREAKING CHANGE:` footer.
 - Body references issues with `Refs #12` or `Closes #12`.
@@ -55,25 +55,55 @@ Refs #34
 ```
 main      o-----------------o-----------o   released only, tagged vX.Y.Z
            \               / \         /
-release     \      o-----o   \       / hotfix/x.y.z
+release     \      o-----o   \       / hotfix/X.Y.Z
              \    /           \     /
 develop   o---o--o-----o---o---o---o---o   integration
               \   /     \ /
-feature        o-o       o   feature/<issue>-<slug>, fix/<issue>-<slug>
+feature        o-o       o   feature/<issue>-<description>, bugfix/..., docs/..., ...
 ```
 
 - `main`: released code only; every release is tagged `vX.Y.Z` ([SemVer](https://semver.org)).
-- `develop`: integration branch; feature and fix PRs target it.
-- `feature/<issue>-<slug>`, `fix/<issue>-<slug>`: branch from and merge into `develop`.
-- `release/x.y.z`: branch from `develop`, stabilize and update `CHANGELOG.md`, merge to `main` (tag) and back to `develop`.
-- `hotfix/x.y.z`: branch from `main` for urgent fixes, merge to `main` (tag) and back to `develop`.
-- AI agent branches such as `claude/*` are allowed and follow the same rules.
+- `develop`: integration branch; all work branches target it.
+- Work branches (`feature/`, `bugfix/`, `docs/`, `chore/`, `spike/`): branch from and merge into `develop`.
+- `release/X.Y.Z`: branch from `develop`, stabilize and update `CHANGELOG.md`, merge to `main` (tag) and back to `develop`.
+- `hotfix/X.Y.Z`: branch from `main` for urgent fixes, merge to `main` (tag) and back to `develop`.
+
+## Branch naming
+
+Branch names follow Git Flow and the [Conventional Branch](https://conventional-branch.github.io/) spec. CI checks them on every PR (`.github/workflows/branch-name.yml`).
+
+| Branch | From → into | Issue type | Commit types it usually carries | Example |
+| --- | --- | --- | --- | --- |
+| `main` | — | — | — | `main` |
+| `develop` | — | — | — | `develop` |
+| `feature/<issue>-<description>` | `develop` → `develop` | `type:feature` | `feat` | `feature/27-tray-menu` |
+| `bugfix/<issue>-<description>` | `develop` → `develop` | `type:bug` | `fix` | `bugfix/41-hook-timeout` |
+| `docs/<issue>-<description>` | `develop` → `develop` | `type:docs` | `docs` | `docs/32-user-guide` |
+| `chore/<issue>-<description>` | `develop` → `develop` | `type:chore` | `chore`, `ci`, `build`, `refactor`, `test`, `perf` | `chore/7-windows-ci` |
+| `spike/<issue>-<description>` | `develop` → `develop` | `type:spike` | `docs`, throwaway code | `spike/9-hook-formats` |
+| `release/X.Y.Z` | `develop` → `main` + `develop` | — | `chore(release)` | `release/0.1.0` |
+| `hotfix/X.Y.Z` | `main` → `main` + `develop` | `type:bug` | `fix` | `hotfix/0.1.1` |
+
+Epics (`type:epic`) never get a branch; their child issues do.
+
+Rules:
+
+- Lowercase ASCII letters, digits and hyphens only. No spaces, underscores, uppercase or consecutive/trailing hyphens.
+- Work branches start with the issue number, then a short English description of 2 to 5 words (`feature/18-sprite-atlas-loader`, not `feature/sprites` or `feature/18_Sprite_Loader`).
+- Dots appear only in version numbers. Versions in branches have no `v` (`release/0.1.0`); tags do (`v0.1.0`).
+- Whole name at most 50 characters.
+- The prefix says what the branch is, the commit scope says where: `bugfix/41-hook-timeout` carries `fix(bridge): ...`.
+- Only `release/*` and `hotfix/*` (and nothing else) open PRs into `main`.
+- Delete the branch after merge.
+
+AI agent branches: when the tool picks the name (for example Claude Code on the web creates `claude/<random-name>`), `claude/*` is accepted as is. Agents that can choose their own name use the table above. Either way the PR links its issue and follows every other rule.
 
 ## Pull request checklist
 
 - [ ] Linked issue (`Closes #N`)
 - [ ] PR title is a valid conventional commit
-- [ ] Targets `develop` (or `main` for `hotfix/*`)
+- [ ] Branch name follows [Branch naming](#branch-naming)
+- [ ] Targets `develop` (`main` only for `release/*` and `hotfix/*`)
 - [ ] Tests added or updated, and passing
 - [ ] Docs updated; ADR added in `.context/decisions/` if an architecture decision was made
 - [ ] `CHANGELOG.md` updated under `[Unreleased]` for user-visible changes
@@ -91,7 +121,7 @@ feature        o-o       o   feature/<issue>-<slug>, fix/<issue>-<slug>
 
 ## Issue types and labels
 
-Types: `type:feature`, `type:bug`, `type:docs`, `type:chore`, `type:spike` (time-boxed research), `type:epic`. Areas: `area:core`, `area:bridge`, `area:ui`, `area:anim`, `area:win`. Priority: `priority:p0` to `priority:p2`. The full set is in `.github/labels.yml`.
+Types: `type:feature`, `type:bug`, `type:docs`, `type:chore`, `type:spike` (time-boxed research), `type:epic`. Each type maps to one branch prefix (see [Branch naming](#branch-naming)). Areas: `area:core`, `area:bridge`, `area:ui`, `area:anim`, `area:win`, `area:ci`, `area:docs`. Priority: `priority:p0` to `priority:p2`. The full set is in `.github/labels.yml`.
 
 ## AI agents
 
