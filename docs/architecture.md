@@ -143,7 +143,7 @@ The whole body must be at most **16 KiB**. Strings are counted in Unicode scalar
 
 #### `target` rules
 
-`buddy-hook` derives `target` from `tool_input` before sending, then cuts it to 60 chars. Any tool not listed sends no `target`.
+`buddy-hook` derives `target` from `tool_input` before sending, then cuts it to 60 chars. Any tool not listed sends no `target`. When in doubt, send no target: an empty hover line is fine, a leaked secret is not.
 
 | Tool | `target` |
 | --- | --- |
@@ -151,7 +151,7 @@ The whole body must be at most **16 KiB**. Strings are counted in Unicode scalar
 | `Grep`, `Glob` | `pattern` |
 | `WebSearch` | `query` |
 | `WebFetch` | Host of `url` only (no path, no query string) |
-| `Bash`, `PowerShell` | Program name only: first whitespace-separated word of `command`, last path segment (`git`, `cargo`) |
+| `Bash`, `PowerShell` | Program name only. Split `command` on whitespace and skip leading `NAME=value` tokens (shell env assignments). If the first remaining token contains `=`, `$` or a quote, or starts with `$env:`, send no `target`. Otherwise send its last path segment (`git`, `cargo`) |
 | `Agent`, `Task` | `subagent_type` |
 
 #### Responses
