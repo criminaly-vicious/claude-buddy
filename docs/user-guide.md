@@ -77,10 +77,10 @@ Each buddy acts out what its session is doing:
 | Researching: reading files, searching, browsing the web | Sits down and reads a sheet of paper |
 | Waiting for you: a permission prompt or a question | Stands up and waves, with a `!` bubble. It also steps forward a little so you notice it |
 | Idle: Claude finished its turn | Stands around, now and then looks around, stretches or scratches |
-| Idle for 5 minutes | Curls up and sleeps (`z` bubbles). Wakes up on the next activity |
+| Idle for a while (5 minutes by default, [adjustable](#settings)) | Curls up and sleeps (`z` bubbles). Wakes up on the next activity |
 | Session ended | Waves goodbye and walks off |
 
-Buddies line up side by side in the bottom-right corner, oldest closest to the corner. Each one keeps its place until its session ends; then the others walk up to close the gap. Up to 10 are shown. With more sessions, the extra buddies collapse into a `+N` chip; hover over it to see everyone.
+Buddies line up side by side in a corner of the screen (bottom right unless you [change it](#settings)), oldest closest to the corner. Each one keeps its place until its session ends; then the others walk up to close the gap. Up to 10 are shown. With more sessions, the extra buddies collapse into a `+N` chip; hover over it to see everyone.
 
 A buddy also leaves if its session's process disappears for 15 seconds, for example when you close the terminal window without exiting Claude Code.
 
@@ -128,14 +128,30 @@ A press that barely moves counts as a click, not a drag.
 | **Hide buddies** / **Show buddies** | Hides or shows all buddies. Sessions keep being tracked while hidden |
 | **Install / repair hooks…** | Connects Claude Code to Claude Buddy ([details](#connect-claude-code-install-hooks)) |
 | **Uninstall hooks…** | Removes Claude Buddy's hooks from your Claude Code settings |
-| **Settings** | **(coming soon)** |
+| **Settings…** | Opens the [settings window](#settings) |
 | **Quit Claude Buddy** | Closes the app. Claude Code sessions are not affected |
 
 **(coming soon)** Start with Windows and a global hotkey to show or hide the buddies (default `Ctrl+Alt+B`).
 
 ## Settings
 
-**(coming soon, [#28](https://github.com/criminaly-vicious/claude-buddy/issues/28))** A settings window for the corner and monitor the buddies use, their size (1x, 2x, 3x), start with Windows, the hotkey, the idle-to-sleep time, and reduce motion. Until then the defaults apply: bottom-right corner of the main monitor, sleep after 5 minutes.
+Tray menu → **Settings…** opens the settings window. Changes apply right away, with no Save button, and are kept for next time.
+
+**Buddies**
+
+| Setting | Options | Default |
+| --- | --- | --- |
+| Corner | Bottom right, bottom left, top right, top left | Bottom right |
+| Monitor | Any connected monitor, listed by number, name and resolution | Primary monitor |
+| Size | 1×, 2×, 3× | 2× |
+| Fall asleep after | 1 to 120 minutes idle | 5 minutes |
+| Reduce motion | Turns off the random idle animations | Off |
+
+**Startup:** start with Windows and a show/hide hotkey **(coming soon, [#29](https://github.com/criminaly-vicious/claude-buddy/issues/29))**.
+
+**Claude Code hooks:** a status panel that says whether the hooks are installed, when the last hook event arrived, and which Claude Code settings file is used. Press **Refresh** to check again. Installing, repairing and removing the hooks is done from the tray menu.
+
+Settings are stored in `%APPDATA%\claude-buddy\config.json`. If that file gets damaged, Claude Buddy starts with the defaults and keeps the broken file as `config.json.invalid` instead of overwriting it.
 
 ## Troubleshooting
 
@@ -144,7 +160,7 @@ A press that barely moves counts as a click, not a drag.
 1. **Is Claude Buddy running?** Look for its icon in the tray (check under the `^` arrow). If it is not there, start it from the Start menu.
 2. **Are the buddies hidden?** Open the tray menu. If it says **Show buddies**, click it.
 3. **Is it a Claude Code CLI session?** Sessions in the Claude desktop app are not shown.
-4. **Are the hooks installed?** Run **Install / repair hooks…**. If it reports "Bridge check failed", quit Claude Buddy, start it again and repeat.
+4. **Are the hooks installed?** Open **Settings…** and look at the *Claude Code hooks* panel, or run **Install / repair hooks…**. If it reports "Bridge check failed", quit Claude Buddy, start it again and repeat.
 5. **Was the session started before the hooks were installed?** Restart that session. Sessions started before the app or the hooks may still appear through the transcript fallback, but only if they wrote to their transcript in the last 30 minutes.
 6. **Did you set `CLAUDE_CONFIG_DIR`?** Claude Buddy reads the same variable as Claude Code. Make sure it is set the same way for both (set it in Windows' environment variables, then restart both).
 
@@ -187,6 +203,7 @@ No. It only observes. It never sends input to a session or approves anything for
 
 - Your Claude Code `settings.json`, only when you choose **Install / repair hooks…**, with a backup kept next to it.
 - A small file at `%APPDATA%\claude-buddy\bridge.json` that tells the hook where to reach the app while it runs.
+- Your Claude Buddy settings, in `%APPDATA%\claude-buddy\config.json`.
 
 ### How do I uninstall?
 
