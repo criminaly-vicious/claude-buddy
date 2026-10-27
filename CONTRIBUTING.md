@@ -31,7 +31,7 @@ cargo test        # Rust core tests
 [Conventional Commits 1.0](https://www.conventionalcommits.org/en/v1.0.0/): `type(scope): subject`
 
 - Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`
-- Scopes: `core`, `bridge`, `hooks`, `ui`, `anim`, `tray`, `win`, `docs`, `ci`, `deps`
+- Scopes: `core`, `bridge`, `hooks`, `ui`, `anim`, `tray`, `win`, `docs`, `ci`, `deps`, `release`
 - Subject: imperative, lowercase, no trailing period, under 72 chars.
 - Breaking changes: `feat(bridge)!:` and/or a `BREAKING CHANGE:` footer.
 - Body references issues with `Refs #12` or `Closes #12`.
@@ -121,7 +121,7 @@ AI agent branches: when the tool picks the name (for example Claude Code on the 
 
 ## Issue types and labels
 
-Types: `type:feature`, `type:bug`, `type:docs`, `type:chore`, `type:spike` (time-boxed research), `type:epic`. Each type maps to one branch prefix (see [Branch naming](#branch-naming)). Areas: `area:core`, `area:bridge`, `area:ui`, `area:anim`, `area:win`. Priority: `priority:p0` to `priority:p2`. The full set is in `.github/labels.yml`.
+Types: `type:feature`, `type:bug`, `type:docs`, `type:chore`, `type:spike` (time-boxed research), `type:epic`. Each type maps to one branch prefix (see [Branch naming](#branch-naming)). Areas: `area:core`, `area:bridge`, `area:ui`, `area:anim`, `area:win`, `area:ci`, `area:docs`. Priority: `priority:p0` to `priority:p2`. The full set is in `.github/labels.yml`.
 
 ## AI agents
 
