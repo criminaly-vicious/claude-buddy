@@ -1,0 +1,26 @@
+name: Spike
+description: Time-boxed research or investigation
+title: "spike: "
+labels: ["type:spike"]
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: What do we need to find out?
+    validations:
+      required: true
+  - type: dropdown
+    id: time-box
+    attributes:
+      label: Time-box
+      options: [2 hours, 4 hours, 1 day, 2 days]
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Expected output
+      description: e.g. ADR in .context/decisions/, prototype branch, findings comment.
+    validations:
+      required: true
