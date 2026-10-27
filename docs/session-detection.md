@@ -38,7 +38,10 @@ The installer writes **exec-form command hooks** (with `args`), which spawn `bud
 
 ### Installer behaviour
 
-Implemented in `apps/desktop/src-tauri/src/installer/` (`HookInstaller`: `plan_install`, `install`, `plan_uninstall`, `uninstall`, `is_installed`). The tray's "Install / Repair hooks" action (#27) calls it.
+Implemented in `apps/desktop/src-tauri/src/installer/` (`HookInstaller`: `plan_install`, `install`, `plan_uninstall`, `uninstall`, `is_installed`). The tray (#27, `src-tauri/src/tray/hooks.rs`) uses it:
+- **Install / repair hooks:** checks that `buddy-hook.exe` is next to the app, runs `plan_install` (dry run) and, if anything would change, asks for confirmation with a summary: the file, how many events, how many lines are added and removed, and that a backup is kept. The summary never shows the settings' contents, which can hold secrets. After installing it reads `bridge.json` and calls `GET /v1/health` with its token, exactly as `buddy-hook` would reach the bridge, and reports the result. Already up to date: no confirmation, just the health check.
+- **Uninstall hooks:** `plan_uninstall`, confirmation, `uninstall`; "No Claude Buddy hooks are installed" when there is nothing to remove.
+- Invalid `settings.json`: nothing is written and the error is shown.
 
 - **File:** `<config>/settings.json`, where `<config>` is `CLAUDE_CONFIG_DIR` if set, else `~/.claude` (Windows: `%USERPROFILE%\.claude`). A missing file is created; a blank file counts as `{}`.
 - **Events:** `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `Notification`, `PermissionRequest`, `Stop`, `SessionEnd`: the events the bridge maps. `SubagentStart`/`SubagentStop` are not registered while the MVP ignores them.

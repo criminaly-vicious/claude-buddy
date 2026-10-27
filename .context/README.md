@@ -42,3 +42,4 @@ Shared memory for humans and AI agents. Kept small and current.
 | [0009](decisions/0009-tiny-http-bridge-server.md) | tiny_http for the bridge server | Accepted |
 | [0010](decisions/0010-notify-transcript-watcher.md) | notify for the transcript watcher | Accepted |
 | [0011](decisions/0011-overlay-click-through.md) | Overlay click-through via a low-level mouse hook | Accepted |
+| [0012](decisions/0012-tray-dialogs-and-single-instance.md) | Tray dialogs and single instance with plain Win32 | Accepted |
