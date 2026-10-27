@@ -181,10 +181,14 @@ The mapping lives in one table in the registry so it is easy to tune.
 
 ## Liveness
 
-- `buddy-hook` sends `CLAUDE_PID` (set by Claude Code in every command hook's environment) with each event; the registry stores it per session. No parent-chain walking is needed to find the Claude process.
-- Every 5 s the registry checks the PID is alive (`sysinfo`). If gone for 15 s, the session leaves. This covers terminals closed without `SessionEnd`.
-- Transcript-only sessions expire after 30 min without writes.
-- ⚠ Windows: not verified. Which process `CLAUDE_PID` points to under the native installer vs npm (`claude.exe` or `node.exe`), and what its parents are under Windows Terminal, PowerShell and VS Code.
+- `buddy-hook` sends `CLAUDE_PID` (set by Claude Code in every command hook's environment) with each event as `claude_pid`; the registry stores it per session. No parent-chain walking is needed to find the Claude process.
+- The bridge driver starts watching a `(session, pid)` pair the first time it sees it (`apps/desktop/src-tauri/src/liveness/`):
+  - **Windows:** opens the process with `SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION` and blocks a small thread in `WaitForSingleObject`. Nothing polls, and because the handle keeps the process object alive, a reused PID cannot be mistaken for the old process. If the process is already gone, the exit is reported at once. If it cannot be opened (e.g. access denied), the session only leaves on `SessionEnd`.
+  - **Linux (development only):** checks `/proc/<pid>/stat` every 5 s and compares the process start time, so a reused PID counts as an exit. Other OSes are not watched.
+- When the process exits, the registry waits a **15 s grace period**, then the buddy leaves. A hook event from the same session with a different PID (e.g. `claude --resume`) cancels the exit. This covers terminals closed without `SessionEnd`.
+- Transcript-only sessions expire after **30 min** without writes.
+- Both expiries are registry deadlines (`Registry::next_deadline`), so the driver sleeps until they are due: no extra thread or timer.
+- ⚠ Windows: not verified. Which process `CLAUDE_PID` points to under the native installer vs npm (`claude.exe` or `node.exe`), and whether it is the process that lives as long as the session.
 
 ## Window focus (click on a buddy)
 

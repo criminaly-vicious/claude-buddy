@@ -298,3 +298,59 @@ fn stalled_client_does_not_block_other_requests() {
     next_change(&h);
     drop(stalled);
 }
+
+/// Runs the driver directly with a fake process watcher that reports every
+/// process as exited right away.
+#[test]
+fn driver_expires_session_when_its_process_exits() {
+    fn exits_at_once(_pid: u32, on_exit: Box<dyn FnOnce() + Send>) -> io::Result<()> {
+        on_exit();
+        Ok(())
+    }
+    let registry = Mutex::new(Registry::new(Config {
+        spawn_ms: 10,
+        min_state_ms: 10,
+        exit_grace_ms: 50,
+        leave_ms: 50,
+        ..Config::default()
+    }));
+    let (inputs, rx) = mpsc::channel();
+    let (changes_tx, changes) = mpsc::channel();
+    inputs
+        .send(Input::Event(RegistryEvent {
+            session_id: SESSION.into(),
+            source: crate::registry::Source::Hooks,
+            at: now(),
+            cwd: Some("/demo".into()),
+            pid: Some(4242),
+            kind: crate::registry::EventKind::SessionStarted,
+        }))
+        .unwrap();
+
+    let thread = std::thread::spawn({
+        let inputs = inputs.clone();
+        move || {
+            drive(&registry, &rx, &inputs, now, exits_at_once, |c| {
+                let _ = changes_tx.send(c);
+            })
+        }
+    });
+
+    let mut saw_leaving = false;
+    loop {
+        match changes
+            .recv_timeout(Duration::from_secs(5))
+            .expect("a change")
+        {
+            Change::Update(view) if view.state == BuddyState::Leaving => saw_leaving = true,
+            Change::Remove(id) => {
+                assert_eq!(id, SESSION);
+                break;
+            }
+            Change::Update(_) => {}
+        }
+    }
+    assert!(saw_leaving);
+    inputs.send(Input::Shutdown).unwrap();
+    thread.join().unwrap();
+}

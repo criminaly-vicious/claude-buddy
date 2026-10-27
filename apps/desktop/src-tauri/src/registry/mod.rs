@@ -109,6 +109,11 @@ pub struct Config {
     pub idle_timeout_ms: Millis,
     /// Length of the leave animation before the session is removed.
     pub leave_ms: Millis,
+    /// How long a session stays after its `claude` process exits, in case it
+    /// comes back (e.g. resumed) before the buddy leaves.
+    pub exit_grace_ms: Millis,
+    /// Transcript-only sessions leave after this long without writes.
+    pub transcript_ttl_ms: Millis,
 }
 
 impl Default for Config {
@@ -118,6 +123,8 @@ impl Default for Config {
             spawn_ms: 1_000,
             idle_timeout_ms: 5 * 60 * 1_000,
             leave_ms: 2_000,
+            exit_grace_ms: 15_000,
+            transcript_ttl_ms: 30 * 60 * 1_000,
         }
     }
 }
@@ -129,6 +136,8 @@ struct Session {
     pending: Option<BuddyState>,
     last_event_at: Millis,
     created_at: Millis,
+    /// When the session's `claude` process was seen exiting.
+    exited_at: Option<Millis>,
 }
 
 #[derive(Debug, Default)]
@@ -167,6 +176,10 @@ impl Registry {
             return Vec::new();
         }
 
+        // A new process for the same session (e.g. `claude --resume`) means it is alive again.
+        if event.pid.is_some() && event.pid != session.view.pid {
+            session.exited_at = None;
+        }
         let mut changed = false;
         if event.source == Source::Hooks && session.view.source == Source::Transcript {
             session.view.source = Source::Hooks;
@@ -186,7 +199,18 @@ impl Registry {
         }
     }
 
-    /// Advances timers (pending states, spawn end, sleep, removal).
+    /// Records that process `pid` of a session exited. The buddy leaves after
+    /// [`Config::exit_grace_ms`] unless the session shows a new process first.
+    /// Ignored when `pid` is not the session's current process.
+    pub fn process_exited(&mut self, session_id: &str, pid: u32, at: Millis) {
+        if let Some(session) = self.sessions.get_mut(session_id) {
+            if session.view.pid == Some(pid) && session.exited_at.is_none() {
+                session.exited_at = Some(at);
+            }
+        }
+    }
+
+    /// Advances timers (pending states, spawn end, sleep, expiry, removal).
     pub fn tick(&mut self, now: Millis) -> Vec<Change> {
         let config = self.config;
         let mut changes = Vec::new();
@@ -201,7 +225,9 @@ impl Registry {
                 continue;
             }
 
-            let next = if let Some(pending) = session.pending {
+            let next = if session.is_expired(now, &config) {
+                Some(BuddyState::Leaving)
+            } else if let Some(pending) = session.pending {
                 (elapsed >= config.min_for(session.view.state)).then_some(pending)
             } else if session.view.state == BuddyState::Spawning {
                 (elapsed >= config.spawn_ms).then_some(BuddyState::Idle)
@@ -235,13 +261,17 @@ impl Registry {
             .values()
             .filter_map(|s| {
                 let since = s.view.since;
-                match (s.pending, s.view.state) {
-                    (_, BuddyState::Leaving) => Some(since + c.leave_ms),
+                let state_deadline = match (s.pending, s.view.state) {
+                    (_, BuddyState::Leaving) => return Some(since + c.leave_ms),
                     (Some(_), state) => Some(since + c.min_for(state)),
                     (None, BuddyState::Spawning) => Some(since + c.spawn_ms),
                     (None, BuddyState::Idle) => Some(s.last_event_at + c.idle_timeout_ms),
                     _ => None,
-                }
+                };
+                [state_deadline, s.expiry_deadline(c)]
+                    .into_iter()
+                    .flatten()
+                    .min()
             })
             .min()
     }
@@ -266,6 +296,7 @@ impl Registry {
             pending: None,
             last_event_at: event.at,
             created_at: event.at,
+            exited_at: None,
         };
         session.absorb_metadata(&event);
         // A session first seen mid-turn still spawns, then shows what it is doing.
@@ -288,6 +319,20 @@ impl Config {
 }
 
 impl Session {
+    /// When this session expires: after its process exit grace, or after the
+    /// transcript TTL for sessions known only from transcripts.
+    fn expiry_deadline(&self, config: &Config) -> Option<Millis> {
+        let exit = self.exited_at.map(|at| at + config.exit_grace_ms);
+        let stale = (self.view.source == Source::Transcript)
+            .then(|| self.last_event_at + config.transcript_ttl_ms);
+        [exit, stale].into_iter().flatten().min()
+    }
+
+    fn is_expired(&self, now: Millis, config: &Config) -> bool {
+        self.expiry_deadline(config)
+            .is_some_and(|deadline| now >= deadline)
+    }
+
     /// The state the event asks for, or `None` to keep the current one.
     fn target_state(&self, kind: &EventKind) -> Option<BuddyState> {
         let current = self.pending.unwrap_or(self.view.state);
