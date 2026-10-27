@@ -181,6 +181,30 @@ mod tests {
     }
 
     #[test]
+    fn review_cases_from_the_protocol_table() {
+        let bash = |command: &str| target("Bash", json!({ "command": command }));
+        assert_eq!(bash("API_KEY=x curl https://x.dev"), Some("curl".into()));
+        assert_eq!(bash("$env:T='x'; git push"), None);
+        assert_eq!(bash(r#""C:\Program Files\git.exe" status"#), None);
+        assert_eq!(
+            target(
+                "WebFetch",
+                json!({"url": "https://example.com/p?token=abc"})
+            ),
+            Some("example.com".into())
+        );
+        assert_eq!(
+            target("Read", json!({"file_path": r"C:\Users\me\secret\plan.md"})),
+            Some("plan.md".into())
+        );
+        assert_eq!(
+            target("Read", json!({"file_path": "/home/me/secret/plan.md"})),
+            Some("plan.md".into())
+        );
+        assert_eq!(target("SomeFutureTool", json!({"file_path": "/x/y"})), None);
+    }
+
+    #[test]
     fn agents_send_the_subagent_type() {
         let input =
             json!({"subagent_type": "Explore", "prompt": "secret plan", "description": "d"});
