@@ -55,6 +55,19 @@
 | Installer size | < 15 MB |
 | Crash-free day of use with 5 sessions | yes |
 
+### Measured
+
+`scripts/perf-budget.ps1` checks the CPU and RAM rows: it starts the release build with an isolated `bridge.json`, plays five sessions through the real bridge, and measures the app plus its WebView2 processes (CPU as a share of the whole machine, RAM as private working set, like Task Manager). The `perf` workflow runs it by hand or when the check changes; it only reports.
+
+Measured on the CI's `windows-latest` runner (4 vCPU, AMD EPYC, software rendering), 27 Oct 2026, 30 s per phase. **The measurement on a real machine (#10) is still pending** and is the one that counts.
+
+| Phase | Avg CPU | Peak CPU (1 s) | Peak RAM | Processes |
+| --- | ---: | ---: | ---: | ---: |
+| Idle (5 buddies, no events) | 0.19 % | 0.88 % | 64.9 MB | 7 |
+| Animating (tool events every 400 ms) | 0.38 % | 1.27 % | 66 MB | 7 |
+
+Both within budget: idle CPU 0.19 % (< 1 %), RAM 66 MB peak (< 80 MB).
+
 ## Assumptions and risks
 
 | Risk | Impact | Mitigation |
