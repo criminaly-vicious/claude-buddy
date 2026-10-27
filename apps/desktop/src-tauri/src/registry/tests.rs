@@ -8,6 +8,8 @@ fn config() -> Config {
         spawn_ms: 1_000,
         idle_timeout_ms: 10_000,
         leave_ms: 2_000,
+        exit_grace_ms: 15_000,
+        transcript_ttl_ms: 60_000,
     }
 }
 
@@ -344,4 +346,69 @@ fn captured_session_plays_out_as_documented() {
         assert_eq!(state(&registry), expected, "after {fixture}");
     }
     assert_eq!(registry.snapshot()[0].project, "demo");
+}
+
+#[test]
+fn exited_process_leaves_after_grace() {
+    let mut registry = idle_registry();
+    registry.process_exited(ID, 4242, 2_000);
+    assert_eq!(
+        registry.next_deadline(),
+        Some(10_000),
+        "idle timeout comes first"
+    );
+
+    registry.tick(16_999);
+    assert_ne!(state(&registry), BuddyState::Leaving);
+    registry.tick(17_000);
+    assert_eq!(state(&registry), BuddyState::Leaving);
+}
+
+#[test]
+fn exit_deadline_is_reported() {
+    let mut registry = idle_registry();
+    registry.apply(event(2_000, tool("Bash")));
+    registry.process_exited(ID, 4242, 3_000);
+    assert_eq!(registry.next_deadline(), Some(18_000));
+}
+
+#[test]
+fn exit_of_another_pid_is_ignored() {
+    let mut registry = idle_registry();
+    registry.process_exited(ID, 1, 2_000);
+    registry.process_exited("unknown-session", 4242, 2_000);
+    registry.tick(20_000);
+    assert_ne!(state(&registry), BuddyState::Leaving);
+}
+
+#[test]
+fn new_process_cancels_the_exit() {
+    let mut registry = idle_registry();
+    registry.process_exited(ID, 4242, 2_000);
+    // Resumed in a new process within the grace period.
+    registry.apply(RegistryEvent {
+        pid: Some(5000),
+        ..event(5_000, EventKind::SessionStarted)
+    });
+    registry.tick(30_000);
+    assert_ne!(state(&registry), BuddyState::Leaving);
+    assert_eq!(registry.snapshot()[0].pid, Some(5000));
+}
+
+#[test]
+fn transcript_only_session_expires_without_writes() {
+    let mut registry = Registry::new(config());
+    registry.apply(event_from(Source::Transcript, 0, EventKind::SessionStarted));
+    registry.apply(event_from(Source::Transcript, 30_000, tool("Read")));
+    registry.tick(89_999);
+    assert_ne!(state(&registry), BuddyState::Leaving);
+    registry.tick(90_000);
+    assert_eq!(state(&registry), BuddyState::Leaving);
+}
+
+#[test]
+fn hook_sessions_do_not_expire_on_silence() {
+    let mut registry = idle_registry();
+    registry.tick(10_000_000);
+    assert_eq!(state(&registry), BuddyState::Sleeping);
 }
