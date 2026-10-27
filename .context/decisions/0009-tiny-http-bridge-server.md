@@ -17,5 +17,5 @@ Use **`tiny_http`** on a dedicated thread. Requests are handled synchronously an
 
 ## Consequences
 - Small dependency tree; no async in the bridge.
-- Blocking I/O: one slow client could hold the server thread. Mitigated by per-request read timeouts and the 16 KiB limit; the only clients are short-lived `buddy-hook` processes.
+- Blocking I/O: `tiny_http` exposes no per-request read timeout. Each request is therefore handled on its own short-lived thread, so a client that stalls mid-body only holds its own thread and never blocks other requests. Authentication runs before the body is read, so only a process holding the user's token can stall a thread at all, and the body read is capped at 16 KiB.
 - If the bridge ever needs streaming or many concurrent clients, revisit with a new ADR.

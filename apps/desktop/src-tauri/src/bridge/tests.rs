@@ -275,3 +275,26 @@ fn constant_time_eq_compares_exactly() {
     assert!(!constant_time_eq(b"abc", b"abd"));
     assert!(!constant_time_eq(b"abc", b"ab"));
 }
+
+#[test]
+fn stalled_client_does_not_block_other_requests() {
+    let h = start("stall");
+    // Authenticated client that promises a body and never sends it. Over
+    // 1 KiB, because tiny_http buffers smaller bodies on its own thread.
+    let mut stalled = TcpStream::connect(("127.0.0.1", h.bridge.port())).unwrap();
+    let head = format!(
+        "POST /v1/events HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer {}\r\nContent-Type: application/json\r\nContent-Length: 10000\r\n\r\n{{",
+        h.token
+    );
+    stalled.write_all(head.as_bytes()).unwrap();
+    std::thread::sleep(Duration::from_millis(100));
+
+    let status = post_event(
+        &h,
+        &h.token,
+        &event_json("SessionStart", r#","start_source":"startup""#),
+    );
+    assert_eq!(status, 204);
+    next_change(&h);
+    drop(stalled);
+}

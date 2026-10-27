@@ -33,12 +33,26 @@ impl Server {
             .ok_or_else(|| std::io::Error::other("bridge is not bound to an IP address"))?;
         let http = Arc::new(http);
         let worker = Arc::clone(&http);
+        let token: Arc<str> = token.into();
         let thread = std::thread::Builder::new()
             .name("bridge-http".into())
             .spawn(move || {
                 for mut request in worker.incoming_requests() {
-                    let (status, body) = handle(&mut request, &token, &inputs, clock);
-                    let _ = request.respond(response(status, body));
+                    // One short-lived thread per request: the body is read
+                    // there, so a client that stalls mid-body cannot block
+                    // the requests behind it.
+                    let token = Arc::clone(&token);
+                    let inputs = inputs.clone();
+                    let spawned = std::thread::Builder::new()
+                        .name("bridge-request".into())
+                        .spawn(move || {
+                            let (status, body) = handle(&mut request, &token, &inputs, clock);
+                            let _ = request.respond(response(status, body));
+                        });
+                    if spawned.is_err() {
+                        // Out of threads: drop the request; the hook ignores failures.
+                        continue;
+                    }
                 }
             })?;
         Ok(Self {
