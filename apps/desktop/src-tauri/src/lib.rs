@@ -2,9 +2,11 @@
 
 pub mod bridge;
 pub mod claude_dir;
+pub mod config;
 pub mod installer;
 pub mod liveness;
 pub mod registry;
+pub mod settings;
 mod single_instance;
 pub mod tray;
 pub mod watcher;
@@ -70,14 +72,22 @@ pub fn run() {
         return;
     }
 
-    let registry: SharedRegistry = Arc::default();
+    // Settings first: the registry starts with the saved idle timeout.
+    let config = settings::ConfigState::load();
+    let saved = config.get();
+    let registry: SharedRegistry = Arc::new(Mutex::new(Registry::new(registry::Config {
+        idle_timeout_ms: saved.idle_timeout_ms(),
+        ..registry::Config::default()
+    })));
     let builder = tauri::Builder::default()
+        .manage(config)
         .manage(Arc::clone(&registry))
         .manage(Mutex::new(None::<Bridge>))
         .manage(Mutex::new(None::<TranscriptWatcher>))
         .setup(move |app| {
             let overlay = Overlay::setup(app)?;
             app.manage(overlay);
+            settings::apply(app.handle(), &saved);
             tray::setup(app)?;
             let _ = app_handle.set(app.handle().clone());
 
@@ -103,6 +113,9 @@ pub fn run() {
         .on_window_event(|window, event| {
             // Moving to a monitor with another DPI: re-anchor at the new scale.
             if let WindowEvent::ScaleFactorChanged { .. } = event {
+                if window.label() != win::OVERLAY_LABEL {
+                    return;
+                }
                 if let Some(overlay) = window.try_state::<Arc<Overlay>>() {
                     let _ = overlay.place();
                 }
@@ -117,7 +130,11 @@ pub fn run() {
         win::get_overlay_anchor,
         win::set_overlay_anchor,
         get_sessions,
-        focus_session
+        focus_session,
+        settings::get_config,
+        settings::set_config,
+        settings::list_monitors,
+        settings::hook_status
     ]);
 
     builder

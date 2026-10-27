@@ -37,7 +37,7 @@
 | Hook Installer | Rust | Adds/removes our hook entries in `~/.claude/settings.json` with backup and key-preserving merge. |
 | Overlay | TypeScript, Canvas 2D | Transparent, frameless, always-on-top, click-through window covering the chosen corner. Draws buddies from sprite sheets, runs physics, shows hover card. |
 | Win Integration | Rust (`windows-sys`), `src-tauri/src/win/` | Overlay window: corner anchoring on the chosen monitor's work area, DPI and display changes, click-through except over regions registered with `set_hit_regions` ([ADR-0011](../.context/decisions/0011-overlay-click-through.md)), expand to the work area for throws, focus the terminal window owning a session PID. Later: autostart, global hotkey. |
-| Tray & Settings | Tauri tray (`src-tauri/src/tray/`) + small settings window (#28) | Show/hide buddies (hidden: window hidden, nothing rendered), install/repair and uninstall hooks with a confirmation and a bridge health check, settings, quit. One instance per Windows session; a second launch shows the first one's buddies ([ADR-0012](../.context/decisions/0012-tray-dialogs-and-single-instance.md)). |
+| Tray & Settings | Tauri tray (`src-tauri/src/tray/`) + settings window (`src-tauri/src/settings.rs`, `src/settings/`) | Show/hide buddies (hidden: window hidden, nothing rendered), install/repair and uninstall hooks with a confirmation and a bridge health check, settings ([below](#app-config)), quit. One instance per Windows session; a second launch shows the first one's buddies ([ADR-0012](../.context/decisions/0012-tray-dialogs-and-single-instance.md)). |
 
 ## Data model
 
@@ -64,6 +64,29 @@ UI receives the full list on start (`sessions:snapshot`) then diffs (`sessions:u
 ## Bridge protocol
 
 Contract between `buddy-hook` (client, #11) and the bridge (server, #12). Protocol version **1**. Types, limits and path resolution are implemented once in `crates/bridge-protocol`, which both sides depend on. Decision record: [ADR-0003](../.context/decisions/0003-loopback-http-bridge.md).
+
+### App config: `config.json`
+
+The app's own settings live next to `bridge.json` (same folder rules as below), in `config.json`:
+
+```json
+{
+  "version": 1,
+  "corner": "bottom-right",
+  "monitor": null,
+  "scale": 2,
+  "idleSleepMinutes": 5,
+  "reduceMotion": false,
+  "startWithWindows": false,
+  "hotkey": null
+}
+```
+
+- `monitor`: index into the monitor list, `null` for the primary monitor. `scale`: 1, 2 or 3 CSS px per sprite pixel. `idleSleepMinutes`: 1–120.
+- `startWithWindows` and `hotkey` are stored only; autostart and the hotkey come with #29.
+- Read leniently (`src-tauri/src/config.rs`): a bad or unknown field falls back to its default without losing the others, out-of-range values are clamped, a newer `version` is read field by field. A file that is not JSON is renamed to `config.json.invalid` and the defaults are used. Writes go through a temporary file and a rename.
+- **Applied live** from the settings window (`set_config` saves, applies and emits `config:changed`): corner and monitor re-anchor the overlay, the idle timeout reaches the registry (the driver is woken to recompute its deadline), scale and reduce motion are picked up by the overlay page. At startup the saved values are applied before the first frame.
+- The settings window also shows the hook status (`hook_status`): installed or not, the settings file, and when the last hook event arrived since start. It refreshes when the window gets focus or on "Refresh", never on a timer.
 
 ### Discovery file: `bridge.json`
 
@@ -200,7 +223,7 @@ The bridge stamps each event with its own receive time and applies events in arr
 | Shell | Tauri 2 | Small binary, low RAM, native tray, transparent windows ([ADR-0001](../.context/decisions/0001-tauri-desktop-shell.md)) |
 | Core | Rust stable | Hooks binary, file watching, Win32 access |
 | UI | TypeScript + Vite, Canvas 2D, no framework in overlay | Full control of render loop, minimal overhead ([ADR-0004](../.context/decisions/0004-pixel-art-canvas-rendering.md)) |
-| Settings UI | Plain TS or Preact | Tiny |
+| Settings UI | Plain TS, a second Vite page (`settings.html`) | Tiny; the window exists only while open |
 | Package manager | pnpm | |
 | Tests | `cargo test`, Vitest, Playwright for overlay snapshots | |
 | CI | GitHub Actions on `windows-latest` | |

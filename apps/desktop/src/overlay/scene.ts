@@ -118,7 +118,7 @@ export class Scene {
 
   constructor(
     private readonly atlas: Atlas,
-    private readonly options: Omit<ControllerOptions, "clips"> = {},
+    private options: Omit<ControllerOptions, "clips"> = {},
   ) {
     const walk = atlas.clips.get("walk");
     if (!walk) throw new Error('atlas has no "walk" animation');
@@ -136,6 +136,12 @@ export class Scene {
       dizzy: clip("dizzy"),
       walk,
     };
+  }
+
+  /** Settings: random idle extras off or on, for every buddy now and later. */
+  setReduceMotion(on: boolean, now: number): void {
+    this.options = { ...this.options, reduceMotion: on };
+    for (const buddy of this.buddies.values()) buddy.animation.setReduceMotion(on, now);
   }
 
   /** Whether any buddy is held, flying, landing or walking back from a throw. */

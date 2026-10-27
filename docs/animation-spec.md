@@ -109,6 +109,6 @@ Implemented in `apps/desktop/src/overlay/hoverCard.ts`:
 
 ## Accessibility & comfort
 
-- Option to reduce motion (no random idle extras, no screen shake).
+- Option to reduce motion (no random idle extras, no screen shake), in the settings window; it applies at once, also to buddies already on screen.
 - `waiting` uses shape (bubble + wave), not only colour.
 - Tooltip text respects system font scaling.

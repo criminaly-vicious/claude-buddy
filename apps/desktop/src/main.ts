@@ -1,3 +1,4 @@
+import { DEFAULT_CONFIG, getConfig, onConfigChanged } from "./config";
 import { parseAtlas, requireClips } from "./sprites/atlas";
 import atlasJson from "./sprites/placeholder/atlas.json";
 import atlasUrl from "./sprites/placeholder/atlas.png";
@@ -23,8 +24,6 @@ import { CONTROLLER_CLIPS } from "./overlay/controller";
 import { Scene, Viewport } from "./overlay/scene";
 import { subscribeSessions } from "./overlay/sessions";
 
-/** CSS pixels per sprite pixel until the settings window exists (#28). */
-const BUDDY_SCALE = 2;
 /** The `+N` group collapses this long after the pointer leaves it. */
 const COLLAPSE_AFTER_MS = 1500;
 /** Space between a buddy and its hover card, in CSS pixels. */
@@ -46,7 +45,10 @@ async function start(): Promise<void> {
   image.src = atlasUrl;
   await image.decode();
 
-  const scene = new Scene(atlas);
+  // Scale and reduce motion come from the settings (applied live).
+  const config = inTauri ? await getConfig().catch(() => DEFAULT_CONFIG) : DEFAULT_CONFIG;
+  let buddyScale = config.scale;
+  const scene = new Scene(atlas, { reduceMotion: config.reduceMotion });
   // In the browser (`pnpm dev:mock`) there is no backend to tell.
   const sync = new HitRegionSync(inTauri ? setHitRegions : async () => {});
 
@@ -69,7 +71,7 @@ async function start(): Promise<void> {
       width,
       height,
       devicePixelRatio: dpr,
-      scale: BUDDY_SCALE,
+      scale: buddyScale,
       home: {
         x: Math.round(home.x * dpr),
         y: Math.round(home.y * dpr),
@@ -257,6 +259,11 @@ async function start(): Promise<void> {
   if (inTauri) {
     await onOverlayPointer((inside) => {
       if (!inside) pointerGone();
+    });
+    await onConfigChanged((changed) => {
+      buddyScale = changed.scale;
+      scene.setReduceMotion(changed.reduceMotion, performance.now());
+      loop.invalidate();
     });
     await onOverlayVisible((visible) => {
       hiddenByUser = !visible;

@@ -144,6 +144,8 @@ struct Session {
 pub struct Registry {
     config: Config,
     sessions: HashMap<String, Session>,
+    /// When the last hook event arrived, for the settings window's status.
+    last_hook_event_at: Option<Millis>,
 }
 
 impl Registry {
@@ -151,7 +153,19 @@ impl Registry {
         Self {
             config,
             sessions: HashMap::new(),
+            last_hook_event_at: None,
         }
+    }
+
+    /// Changes the idle → sleeping timeout (settings). Takes effect at the
+    /// next tick; the driver must be woken to recompute its deadline.
+    pub fn set_idle_timeout(&mut self, ms: Millis) {
+        self.config.idle_timeout_ms = ms;
+    }
+
+    /// When the last event from a hook arrived, if any since start.
+    pub fn last_hook_event_at(&self) -> Option<Millis> {
+        self.last_hook_event_at
     }
 
     /// All live sessions, oldest first (stable slot order for the overlay).
@@ -169,6 +183,9 @@ impl Registry {
 
     /// Applies one event and returns what changed.
     pub fn apply(&mut self, event: RegistryEvent) -> Vec<Change> {
+        if event.source == Source::Hooks {
+            self.last_hook_event_at = Some(event.at);
+        }
         let config = self.config;
         let Some(session) = self.sessions.get_mut(&event.session_id) else {
             return self.create(event);
