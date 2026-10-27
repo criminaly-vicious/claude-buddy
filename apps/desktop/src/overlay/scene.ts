@@ -1,28 +1,14 @@
 /**
- * What is on screen: one buddy per session, the clip it plays, the frame due
- * now, where it stands, and its hit region. Pure (time is passed in), so it
- * is tested without a canvas.
- *
- * The state → clip choice here is deliberately simple: one clip per state,
- * restarting on every state change. Transitions (sit down before working,
- * idle extras) come with the animation controller (#20); group layout rules
- * (stable slots, overflow) with #21.
+ * What is on screen: one buddy per session, the frame its animation
+ * controller shows now, where it stands, and its hit region. Pure (time is
+ * passed in), so it is tested without a canvas. Group layout rules (stable
+ * slots, overflow) come with #21.
  */
 
-import { Atlas, Clip, Frame, frameAt } from "../sprites/atlas";
-import type { BuddyState, SessionView } from "../types";
+import { Atlas, Frame } from "../sprites/atlas";
+import type { SessionView } from "../types";
+import { AnimationController, ControllerOptions } from "./controller";
 import type { HitRegion } from "./native";
-
-/** Clip and looping per state, until the animation controller (#20). */
-export const STATE_CLIPS: Record<BuddyState, { clip: string; loop: boolean }> = {
-  spawning: { clip: "spawn", loop: false },
-  idle: { clip: "idle", loop: true },
-  working: { clip: "work_type", loop: true },
-  researching: { clip: "research_read", loop: true },
-  waiting: { clip: "wait_wave", loop: true },
-  sleeping: { clip: "sleep", loop: true },
-  leaving: { clip: "leave", loop: false },
-};
 
 /** Sprite frame size in the atlas, in sprite pixels. */
 export const SPRITE_SIZE = 32;
@@ -57,16 +43,17 @@ export interface SceneFrame {
 
 interface Buddy {
   view: SessionView;
-  clip: Clip;
-  loop: boolean;
-  startedAt: number;
+  animation: AnimationController;
 }
 
 export class Scene {
   /** Insertion order is slot order: newest at the outer edge. */
   private buddies = new Map<string, Buddy>();
 
-  constructor(private readonly atlas: Atlas) {}
+  constructor(
+    private readonly atlas: Atlas,
+    private readonly options: Omit<ControllerOptions, "clips"> = {},
+  ) {}
 
   get size(): number {
     return this.buddies.size;
@@ -84,16 +71,17 @@ export class Scene {
   /** One session changed (`sessions:update`). */
   update(view: SessionView, now: number): void {
     const existing = this.buddies.get(view.id);
-    if (existing && existing.view.state === view.state) {
+    if (existing) {
       existing.view = view;
+      existing.animation.setState(view.state, now);
       return;
     }
-    const { clip, loop } = STATE_CLIPS[view.state];
     this.buddies.set(view.id, {
       view,
-      clip: this.clip(clip),
-      loop,
-      startedAt: now,
+      animation: new AnimationController(view.state, now, {
+        ...this.options,
+        clips: this.atlas.clips,
+      }),
     });
   }
 
@@ -113,10 +101,9 @@ export class Scene {
     let nextChangeAt: number | null = null;
     let slot = 0;
     for (const [id, buddy] of this.buddies) {
-      const { frame, nextChangeAt: next } = frameAt(buddy.clip, now - buddy.startedAt, buddy.loop);
+      const { frame, nextChangeAt: next } = buddy.animation.current(now);
       if (next !== null) {
-        const at = buddy.startedAt + next;
-        nextChangeAt = nextChangeAt === null ? at : Math.min(nextChangeAt, at);
+        nextChangeAt = nextChangeAt === null ? next : Math.min(nextChangeAt, next);
       }
       // Bottom-right, newest at the outer edge, as in the default corner.
       const x = viewport.width - size - slot * (size + gap);
@@ -128,11 +115,5 @@ export class Scene {
       regions.push({ x: x / css, y: y / css, width: size / css, height: size / css });
     }
     return { sprites, regions, nextChangeAt };
-  }
-
-  private clip(name: string): Clip {
-    const clip = this.atlas.clips.get(name);
-    if (!clip) throw new Error(`atlas has no "${name}" animation`);
-    return clip;
   }
 }

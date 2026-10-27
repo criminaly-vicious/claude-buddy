@@ -5,7 +5,8 @@ import { HitRegionSync } from "./overlay/hitSync";
 import { RenderLoop } from "./overlay/loop";
 import { setHitRegions } from "./overlay/native";
 import { drawScene } from "./overlay/renderer";
-import { Scene, STATE_CLIPS, Viewport } from "./overlay/scene";
+import { CONTROLLER_CLIPS } from "./overlay/controller";
+import { Scene, Viewport } from "./overlay/scene";
 import { subscribeSessions } from "./overlay/sessions";
 
 /** CSS pixels per sprite pixel until the settings window exists (#28). */
@@ -20,7 +21,7 @@ async function start(): Promise<void> {
 
   // Placeholder art until #19; fails loudly if an animation is missing.
   const atlas = parseAtlas(atlasJson);
-  requireClips(atlas, Object.values(STATE_CLIPS).map((s) => s.clip));
+  requireClips(atlas, CONTROLLER_CLIPS);
   const image = new Image();
   image.src = atlasUrl;
   await image.decode();

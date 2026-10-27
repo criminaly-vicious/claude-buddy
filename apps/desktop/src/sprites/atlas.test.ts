@@ -7,6 +7,9 @@ import { AtlasError, frameAt, parseAtlas, requireClips } from "./atlas";
 const SPEC_ANIMATIONS = [
   "spawn",
   "idle",
+  "idle_look",
+  "idle_stretch",
+  "idle_scratch",
   "sit_down",
   "work_type",
   "research_read",
@@ -17,6 +20,7 @@ const SPEC_ANIMATIONS = [
   "grabbed",
   "fly",
   "land",
+  "land_splat",
   "dizzy",
   "leave",
 ];
