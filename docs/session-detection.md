@@ -36,6 +36,19 @@ The installer writes **exec-form command hooks** (with `args`), which spawn `bud
 - `async: true` runs the hook in the background, so it adds no latency to the session. Claude Code does not enforce `timeout` on async hooks, so `buddy-hook` keeps its own hard timeout.
 - ⚠ Windows: not verified. Exec form, `async` and the settings watcher are documented for Windows but were tested on Linux only.
 
+### Installer behaviour
+
+Implemented in `apps/desktop/src-tauri/src/installer/` (`HookInstaller`: `plan_install`, `install`, `plan_uninstall`, `uninstall`, `is_installed`). The tray's "Install / Repair hooks" action (#27) calls it.
+
+- **File:** `<config>/settings.json`, where `<config>` is `CLAUDE_CONFIG_DIR` if set, else `~/.claude` (Windows: `%USERPROFILE%\.claude`). A missing file is created; a blank file counts as `{}`.
+- **Events:** `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `Notification`, `PermissionRequest`, `Stop`, `SessionEnd`: the events the bridge maps. `SubagentStart`/`SubagentStop` are not registered while the MVP ignores them.
+- **Ours vs theirs:** a hook is ours when its `command` file name is `buddy-hook.exe` or `buddy-hook` (any folder, any case). Install removes all of ours, then appends one group `{"hooks": [<ours>]}` per event, so an older install at another path is upgraded and nothing is duplicated. Other tools' hooks, matchers and groups are never touched; a group shared with another tool keeps the other hook.
+- **No needless writes:** if the hooks are already exactly right, install changes nothing, makes no backup and keeps the file's exact bytes.
+- **Safety:** before every write, the old file is copied to `settings.json.claude-buddy-backup-<epoch ms>` next to it. The new file is written to a temporary file and renamed into place, keeping the original permissions. Key order is preserved (`serde_json` `preserve_order`), output uses two-space indentation like Claude Code.
+- **Refusals:** invalid JSON (comments included) or an unexpected shape (`hooks` not an object, an event not a list) is refused with the line and column; nothing is written.
+- **Dry run:** `plan_install` / `plan_uninstall` return the before and after text and a line diff, without writing.
+- **Round trip:** install then uninstall gives back the original bytes for files formatted with two-space indentation. Exception: an empty hook container the user already had (`"hooks": {}`, `"Stop": []`) is removed by uninstall, because it cannot be told apart from one the install created. Claude Code treats both the same, so the result is semantically identical.
+
 ### Payload (stdin JSON)
 
 Common fields, present on (almost) every event:
