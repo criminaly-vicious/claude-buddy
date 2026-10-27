@@ -3,6 +3,7 @@
 
 pub mod bridge;
 pub mod claude_dir;
+pub mod installer;
 pub mod liveness;
 pub mod registry;
 pub mod watcher;
