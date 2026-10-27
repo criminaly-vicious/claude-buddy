@@ -95,7 +95,7 @@ export interface Showing {
 export class AnimationController {
   private readonly clips: ReadonlyMap<string, Clip>;
   private readonly random: () => number;
-  private readonly reduceMotion: boolean;
+  private reduceMotion: boolean;
 
   private target: BuddyState;
   private step: Step;
@@ -121,6 +121,15 @@ export class AnimationController {
     this.queue = rest;
     this.startedAt = now;
     this.enterStep(now);
+  }
+
+  /** Turns random idle extras off (or back on, from `now`) at runtime. */
+  setReduceMotion(on: boolean, now: number): void {
+    if (on === this.reduceMotion) return;
+    this.advance(now);
+    this.reduceMotion = on;
+    if (on) this.nextExtraAt = null;
+    else if (this.step.clip === "idle" && this.step.loop) this.enterStep(now);
   }
 
   get state(): BuddyState {
