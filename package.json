@@ -1,0 +1,14 @@
+{
+  "name": "claude-buddy",
+  "private": true,
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "tauri": "pnpm --filter @claude-buddy/desktop tauri",
+    "dev:mock": "pnpm --filter @claude-buddy/desktop dev:mock",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test"
+  }
+}
