@@ -104,6 +104,7 @@ HTTP hooks receive none of this. That is one reason they are not used (below).
 - Must exit 0 fast (< 50 ms target, hard timeout 300 ms on the HTTP call) and print nothing, so it never affects the session. A non-zero exit or stdout output shows up as a hook error in the user's transcript.
 - If the bridge is not running, drop the event silently.
 - Sanitise before sending: only the tool name and a short target (file basename, first 60 chars of a search query or command name). Never forward `prompt`, `tool_response`, `last_assistant_message` or file contents.
+- Implemented in `crates/buddy-hook`: a silent panic hook plus `catch_unwind` around everything, and `exit(0)` in all cases. A hand-written HTTP/1.1 request over `std::net::TcpStream` (loopback only, no TLS, no extra dependency) with one 300 ms deadline shared by connect and write. The hook half-closes after writing and never reads the response. A `target` is sent only for `PreToolUse`, using `bridge_protocol::target::derive`. Measured on Linux: 371 KB release binary; p95 3.4 ms per run, process start included.
 
 ### Why not the built-in `http` hook type
 
