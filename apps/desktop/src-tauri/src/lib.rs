@@ -29,6 +29,15 @@ fn get_sessions(registry: tauri::State<'_, SharedRegistry>) -> Vec<registry::Ses
         .unwrap_or_default()
 }
 
+/// Click on a buddy: focus the terminal window of session `id` (#23).
+/// Best effort; `true` only when the window is now in front, so the buddy
+/// hops on success.
+#[tauri::command]
+fn focus_session(registry: tauri::State<'_, SharedRegistry>, id: String) -> bool {
+    let pid = registry.lock().ok().and_then(|registry| registry.pid(&id));
+    pid.is_some_and(win::focus_process)
+}
+
 /// Dev-only dry run of the hook installer: the diff it would apply to
 /// `settings.json`, with `buddy-hook` expected next to the app executable.
 /// The real install action comes with the tray menu (#27).
@@ -112,6 +121,7 @@ pub fn run() {
         win::get_overlay_anchor,
         win::set_overlay_anchor,
         get_sessions,
+        focus_session,
         debug_hook_install_plan
     ]);
     #[cfg(not(debug_assertions))]
@@ -122,7 +132,8 @@ pub fn run() {
         win::set_overlay_content_size,
         win::get_overlay_anchor,
         win::set_overlay_anchor,
-        get_sessions
+        get_sessions,
+        focus_session
     ]);
 
     builder

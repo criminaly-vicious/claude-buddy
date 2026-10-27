@@ -4,6 +4,9 @@
 //! hover card). Decisions: ADR-0011. Geometry and hit-testing are pure and
 //! tested everywhere; the Win32 parts live in `win32.rs`.
 
+pub mod focus;
+#[cfg(windows)]
+mod focus_win32;
 mod geometry;
 mod hit;
 #[cfg(windows)]
@@ -204,6 +207,20 @@ fn set_click_through(window: &WebviewWindow, click_through: bool) {
                 win32::ensure_tool_window(hwnd.0 as windows_sys::Win32::Foundation::HWND);
             }
         });
+    }
+}
+
+/// Brings the terminal window of session process `pid` to the front (#23).
+/// Returns whether it is now in the foreground; always `false` off Windows.
+pub fn focus_process(pid: u32) -> bool {
+    #[cfg(windows)]
+    {
+        focus_win32::focus_process(pid)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = pid;
+        false
     }
 }
 

@@ -161,6 +161,12 @@ impl Registry {
         sessions.into_iter().map(|s| s.view.clone()).collect()
     }
 
+    /// The process behind session `id`, for window focus. Only sessions the
+    /// registry knows can be focused, whatever the overlay asks for.
+    pub fn pid(&self, id: &str) -> Option<u32> {
+        self.sessions.get(id).and_then(|s| s.view.pid)
+    }
+
     /// Applies one event and returns what changed.
     pub fn apply(&mut self, event: RegistryEvent) -> Vec<Change> {
         let config = self.config;

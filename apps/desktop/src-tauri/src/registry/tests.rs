@@ -71,6 +71,13 @@ fn view_has_project_cwd_and_pid() {
 }
 
 #[test]
+fn pid_lookup_for_window_focus() {
+    let registry = idle_registry();
+    assert_eq!(registry.pid(ID), Some(4242));
+    assert_eq!(registry.pid("unknown"), None);
+}
+
+#[test]
 fn project_name_handles_windows_paths() {
     assert_eq!(project_name(r"C:\Users\me\proj\"), "proj");
     assert_eq!(project_name("/home/user/demo"), "demo");
