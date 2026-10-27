@@ -1,0 +1,15 @@
+[workspace]
+resolver = "2"
+members = ["apps/desktop/src-tauri", "crates/buddy-hook"]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/criminaly-vicious/claude-buddy"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true
