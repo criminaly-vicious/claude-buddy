@@ -8,6 +8,7 @@ mod server;
 #[cfg(windows)]
 mod win_acl;
 
+use std::collections::HashSet;
 use std::io;
 use std::path::Path;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
@@ -22,7 +23,19 @@ use crate::registry::{Change, Millis, Registry, RegistryEvent};
 /// Messages to the driver thread, which owns all registry changes.
 pub enum Input {
     Event(RegistryEvent),
+    /// A session's `claude` process exited (from [`crate::liveness`]).
+    ProcessExited {
+        session_id: String,
+        pid: u32,
+    },
     Shutdown,
+}
+
+/// Starts watching a process; calls the callback when it exits.
+type WatchFn = fn(u32, Box<dyn FnOnce() + Send>) -> io::Result<()>;
+
+fn watch_process(pid: u32, on_exit: Box<dyn FnOnce() + Send>) -> io::Result<()> {
+    crate::liveness::watch(pid, on_exit)
 }
 
 /// A running bridge. Dropping it stops the server and the driver and deletes `bridge.json`.
@@ -88,7 +101,10 @@ impl Driver {
     ) -> io::Result<Self> {
         let thread = std::thread::Builder::new()
             .name("bridge-driver".into())
-            .spawn(move || drive(&registry, &rx, now, emit))?;
+            .spawn({
+                let inputs = inputs.clone();
+                move || drive(&registry, &rx, &inputs, now, watch_process, emit)
+            })?;
         Ok(Self {
             inputs,
             thread: Some(thread),
@@ -110,9 +126,13 @@ impl Drop for Driver {
 fn drive(
     registry: &Mutex<Registry>,
     rx: &Receiver<Input>,
+    inputs: &Sender<Input>,
     clock: fn() -> Millis,
+    watch: WatchFn,
     mut emit: impl FnMut(Change),
 ) {
+    // (session, pid) pairs already being watched.
+    let mut watched: HashSet<(String, u32)> = HashSet::new();
     loop {
         let deadline = lock(registry).next_deadline();
         let input = match deadline {
@@ -133,13 +153,38 @@ fn drive(
         let changes = {
             let mut registry = lock(registry);
             let mut changes = match input {
-                Some(Input::Event(event)) => registry.apply(event),
+                Some(Input::Event(event)) => {
+                    if let Some(pid) = event.pid {
+                        let key = (event.session_id.clone(), pid);
+                        if !watched.contains(&key) {
+                            let inputs = inputs.clone();
+                            let session_id = key.0.clone();
+                            let on_exit = Box::new(move || {
+                                let _ = inputs.send(Input::ProcessExited { session_id, pid });
+                            });
+                            // A process we cannot watch only leaves on SessionEnd.
+                            if watch(pid, on_exit).is_ok() {
+                                watched.insert(key);
+                            }
+                        }
+                    }
+                    registry.apply(event)
+                }
+                Some(Input::ProcessExited { session_id, pid }) => {
+                    registry.process_exited(&session_id, pid, clock());
+                    Vec::new()
+                }
                 Some(Input::Shutdown) => return,
                 None => Vec::new(),
             };
             changes.extend(registry.tick(clock()));
             changes
         };
+        for change in &changes {
+            if let Change::Remove(id) = change {
+                watched.retain(|(session_id, _)| session_id != id);
+            }
+        }
         changes.into_iter().for_each(&mut emit);
     }
 }
