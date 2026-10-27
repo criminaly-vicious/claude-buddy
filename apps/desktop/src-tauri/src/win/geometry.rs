@@ -72,6 +72,19 @@ pub fn anchor(work_area: Rect, size: (f64, f64), scale: f64, corner: Corner, mar
     }
 }
 
+/// Where the anchored rectangle `home` sits inside `outer` (the expanded
+/// overlay), in logical pixels relative to `outer`'s top-left corner. The
+/// frontend keeps the buddies there while the window is expanded, so the
+/// group does not jump when the window grows.
+pub fn inner_rect(outer: Rect, home: Rect, scale: f64) -> LogicalRect {
+    LogicalRect {
+        x: f64::from(home.x - outer.x) / scale,
+        y: f64::from(home.y - outer.y) / scale,
+        width: f64::from(home.width) / scale,
+        height: f64::from(home.height) / scale,
+    }
+}
+
 /// Converts a frontend region to screen pixels, given the overlay's
 /// top-left corner on screen and its scale factor.
 pub fn to_screen(region: LogicalRect, origin: (i32, i32), scale: f64) -> Rect {
@@ -103,6 +116,27 @@ mod tests {
         width: 1920,
         height: 1032,
     };
+
+    #[test]
+    fn inner_rect_places_home_inside_the_expanded_overlay() {
+        // Second monitor to the left, 150 % scale, taskbar on top.
+        let work = Rect {
+            x: -2880,
+            y: 72,
+            width: 2880,
+            height: 1548,
+        };
+        let home = anchor(work, (200.0, 100.0), 1.5, Corner::BottomRight, 8.0);
+        assert_eq!(
+            inner_rect(work, home, 1.5),
+            LogicalRect {
+                x: 1920.0 - 200.0 - 8.0,
+                y: 1032.0 - 100.0 - 8.0,
+                width: 200.0,
+                height: 100.0
+            }
+        );
+    }
 
     #[test]
     fn anchors_each_corner_inside_the_work_area() {

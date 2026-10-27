@@ -45,6 +45,15 @@ pub struct Anchor {
     pub monitor: Option<usize>,
 }
 
+/// The expanded overlay, in logical pixels: its size (the work area) and
+/// where the anchored area (`home`) lies inside it.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+pub struct ExpandedLayout {
+    pub width: f64,
+    pub height: f64,
+    pub home: LogicalRect,
+}
+
 pub struct Overlay {
     window: WebviewWindow,
     anchor: Mutex<Anchor>,
@@ -131,11 +140,12 @@ impl Overlay {
             return Ok(());
         }
         *lock(&self.content_size) = size;
-        self.place()
+        self.place().map(|_| ())
     }
 
-    /// Grows the overlay to cover its whole monitor, e.g. while a buddy is thrown (#24).
-    pub fn expand(&self) -> tauri::Result<()> {
+    /// Grows the overlay to cover its monitor's work area while a buddy is
+    /// dragged or thrown (#24). Returns where the anchored area lies inside it.
+    pub fn expand(&self) -> tauri::Result<Option<ExpandedLayout>> {
         self.expanded.store(true, Ordering::SeqCst);
         self.place()
     }
@@ -143,7 +153,7 @@ impl Overlay {
     /// Back to the anchored size and position.
     pub fn restore(&self) -> tauri::Result<()> {
         self.expanded.store(false, Ordering::SeqCst);
-        self.place()
+        self.place().map(|_| ())
     }
 
     pub fn set_hit_regions(&self, regions: Vec<LogicalRect>) {
@@ -151,35 +161,37 @@ impl Overlay {
     }
 
     /// Moves and sizes the window for the current anchor, monitor and DPI.
-    pub fn place(&self) -> tauri::Result<()> {
+    /// While expanded, returns where the anchored area lies inside the window.
+    pub fn place(&self) -> tauri::Result<Option<ExpandedLayout>> {
         let Some(monitor) = self.monitor()? else {
-            return Ok(());
+            return Ok(None);
         };
         let scale = monitor.scale_factor();
-        let rect = if self.expanded.load(Ordering::SeqCst) {
-            Rect {
-                x: monitor.position().x,
-                y: monitor.position().y,
-                width: monitor.size().width,
-                height: monitor.size().height,
-            }
-        } else {
-            let work = monitor.work_area();
-            let work = Rect {
-                x: work.position.x,
-                y: work.position.y,
-                width: work.size.width,
-                height: work.size.height,
+        let work = monitor.work_area();
+        let work = Rect {
+            x: work.position.x,
+            y: work.position.y,
+            width: work.size.width,
+            height: work.size.height,
+        };
+        let size = *lock(&self.content_size);
+        let home = geometry::anchor(work, size, scale, self.anchor().corner, MARGIN);
+        let (rect, layout) = if self.expanded.load(Ordering::SeqCst) {
+            let layout = ExpandedLayout {
+                width: f64::from(work.width) / scale,
+                height: f64::from(work.height) / scale,
+                home: geometry::inner_rect(work, home, scale),
             };
-            let size = *lock(&self.content_size);
-            geometry::anchor(work, size, scale, self.anchor().corner, MARGIN)
+            (work, Some(layout))
+        } else {
+            (home, None)
         };
         self.window
             .set_size(PhysicalSize::new(rect.width, rect.height))?;
         self.window
             .set_position(PhysicalPosition::new(rect.x, rect.y))?;
         lock(self.tester).set_geometry((rect.x, rect.y), scale);
-        Ok(())
+        Ok(layout)
     }
 
     fn monitor(&self) -> tauri::Result<Option<Monitor>> {
@@ -236,8 +248,11 @@ pub fn set_hit_regions(overlay: tauri::State<'_, Arc<Overlay>>, regions: Vec<Log
     overlay.set_hit_regions(regions);
 }
 
+/// Frontend: a buddy is grabbed. `null` when no monitor is known.
 #[tauri::command]
-pub fn overlay_expand(overlay: tauri::State<'_, Arc<Overlay>>) -> Result<(), String> {
+pub fn overlay_expand(
+    overlay: tauri::State<'_, Arc<Overlay>>,
+) -> Result<Option<ExpandedLayout>, String> {
     overlay.expand().map_err(|e| e.to_string())
 }
 
