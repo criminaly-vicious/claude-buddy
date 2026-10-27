@@ -1,5 +1,7 @@
 # Claude Buddy
 
+[![ci](https://github.com/criminaly-vicious/claude-buddy/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/criminaly-vicious/claude-buddy/actions/workflows/ci.yml)
+
 > Little orange desk-mates that live in the corner of your screen, one for every Claude Code session you have running.
 
 Claude Buddy is a lightweight background app for **Windows** (other platforms later). It connects to the **Claude Code CLI** sessions open on your machine and gives each one a small animated pixel-art buddy. Buddies sit together in a corner of the screen and act out what their session is doing:
