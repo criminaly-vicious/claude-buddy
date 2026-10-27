@@ -2,6 +2,7 @@
 //! own issues (see docs/backlog.md).
 
 pub mod bridge;
+pub mod liveness;
 pub mod registry;
 
 use std::sync::{Arc, Mutex};
