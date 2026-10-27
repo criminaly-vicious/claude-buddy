@@ -38,4 +38,5 @@ jobs:
             docs
             ci
             deps
+            release
           requireScope: false
