@@ -143,6 +143,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "bridge-protocol"
+version = "0.0.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "brotli"
 version = "9.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
