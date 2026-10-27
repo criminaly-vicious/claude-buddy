@@ -24,6 +24,8 @@ A Windows tray app (Tauri 2, Rust core, TypeScript Canvas overlay) that shows an
 | --- | --- |
 | `docs/` | Vision, scope, architecture, session detection, animation spec, roadmap, backlog |
 | `.context/agents/` | Role briefs: what each agent owns and how it works |
+| `.context/sessions.md` | Live registry of agent sessions |
+| `.claude/skills/master/` | Master-agent loop: connect to sessions, review, merge |
 | `.context/decisions/` | ADRs |
 | `.github/` | Issue forms, PR template, labels, workflows |
 
