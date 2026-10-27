@@ -31,7 +31,7 @@
 | Component | Language | Responsibility |
 | --- | --- | --- |
 | `buddy-hook` | Rust (tiny CLI, < 1 MB) | Invoked by Claude Code hooks. Reads hook JSON from stdin, sanitises it, adds `CLAUDE_PID`, POSTs it to the bridge ([protocol](#bridge-protocol)). Exits 0 in < 50 ms and **never** blocks or fails the Claude session (fire-and-forget, short timeout). |
-| Bridge | Rust (`axum` or `tiny_http`) | Local HTTP server bound to `127.0.0.1` on a random free port. Port + token written to `bridge.json` ([protocol](#bridge-protocol)). Validates events and normalises them into registry events. |
+| Bridge | Rust (`tiny_http`, [ADR-0009](../.context/decisions/0009-tiny-http-bridge-server.md)) | Local HTTP server bound to `127.0.0.1` on a random free port. Port + token written to `bridge.json` ([protocol](#bridge-protocol)). Validates events and normalises them into registry events. |
 | Transcript Watcher | Rust (`notify`) | Watches `~/.claude/projects/**.jsonl`. Tails new lines, infers state when hooks are missing. Debounced. |
 | Session Registry | Rust | Single source of truth. Merges both sources, runs the [state machine](session-detection.md#state-machine), expires dead sessions, emits diffs to the UI. |
 | Hook Installer | Rust | Adds/removes our hook entries in `~/.claude/settings.json` with backup and key-preserving merge. |
