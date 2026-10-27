@@ -13,9 +13,9 @@ export interface AppConfig {
   scale: number;
   idleSleepMinutes: number;
   reduceMotion: boolean;
-  /** Stored only until autostart lands (#29). */
+  /** Mirrors the real autostart entry in the registry. */
   startWithWindows: boolean;
-  /** Stored only until the global hotkey lands (#29). */
+  /** Global show/hide hotkey, e.g. "Ctrl+Alt+B"; `null` for none. */
   hotkey: string | null;
 }
 
@@ -27,7 +27,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   idleSleepMinutes: 5,
   reduceMotion: false,
   startWithWindows: false,
-  hotkey: null,
+  hotkey: "Ctrl+Alt+B",
 };
 
 export function getConfig(): Promise<AppConfig> {
@@ -67,4 +67,16 @@ export interface HookStatus {
 
 export function hookStatus(): Promise<HookStatus> {
   return invoke("hook_status");
+}
+
+export interface IntegrationStatus {
+  /** Whether Claude Buddy starts with Windows; `null` where unsupported. */
+  autostart: boolean | null;
+  autostartError: string | null;
+  /** Why the hotkey is not active: bad text, or another app holds it. */
+  hotkeyError: string | null;
+}
+
+export function integrationStatus(): Promise<IntegrationStatus> {
+  return invoke("integration_status");
 }

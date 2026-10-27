@@ -4,11 +4,13 @@
 //! hover card). Decisions: ADR-0011. Geometry and hit-testing are pure and
 //! tested everywhere; the Win32 parts live in `win32.rs`.
 
+pub mod autostart;
 pub mod focus;
 #[cfg(windows)]
 mod focus_win32;
 mod geometry;
 mod hit;
+pub mod hotkey;
 #[cfg(windows)]
 mod win32;
 

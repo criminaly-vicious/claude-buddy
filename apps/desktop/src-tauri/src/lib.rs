@@ -83,6 +83,7 @@ pub fn run() {
 
     // Settings first: the registry starts with the saved idle timeout.
     let config = settings::ConfigState::load();
+    settings::sync_autostart(&config);
     let saved = config.get();
     let registry: SharedRegistry = Arc::new(Mutex::new(Registry::new(registry::Config {
         idle_timeout_ms: saved.idle_timeout_ms(),
@@ -96,6 +97,7 @@ pub fn run() {
         .setup(move |app| {
             let overlay = Overlay::setup(app)?;
             app.manage(overlay);
+            app.manage(settings::Integrations::start(app.handle()));
             settings::apply(app.handle(), &saved);
             tray::setup(app)?;
             let _ = app_handle.set(app.handle().clone());
@@ -143,7 +145,8 @@ pub fn run() {
         settings::get_config,
         settings::set_config,
         settings::list_monitors,
-        settings::hook_status
+        settings::hook_status,
+        settings::integration_status
     ]);
 
     builder

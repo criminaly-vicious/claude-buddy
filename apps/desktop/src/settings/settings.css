@@ -78,6 +78,11 @@ legend {
   width: 5em;
 }
 
+.row #hotkey {
+  width: auto;
+  flex: 1;
+}
+
 .disabled,
 .detail {
   color: var(--muted);
