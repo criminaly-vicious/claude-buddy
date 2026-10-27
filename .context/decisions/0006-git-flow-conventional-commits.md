@@ -1,6 +1,6 @@
 # 0006. Git Flow + Conventional Commits
 
-- **Status:** Accepted
+- **Status:** Accepted; merge rule superseded by [ADR-0008](0008-merge-commits.md)
 - **Date:** 2026-10-27
 
 ## Context
