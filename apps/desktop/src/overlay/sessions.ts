@@ -18,7 +18,9 @@ export interface SessionHandlers {
  */
 export async function subscribeSessions(handlers: SessionHandlers): Promise<() => void> {
   if (import.meta.env.MODE === "mock") {
-    return startMockFeed(handlers.snapshot);
+    // `?count=12` tries the overflow chip; default 5.
+    const count = Number(new URLSearchParams(location.search).get("count")) || 5;
+    return startMockFeed(handlers.snapshot, { count });
   }
   const unlisten = await Promise.all([
     listen<SessionView[]>("sessions:snapshot", (e) => handlers.snapshot(e.payload)),

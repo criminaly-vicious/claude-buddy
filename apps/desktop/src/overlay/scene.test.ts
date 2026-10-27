@@ -74,7 +74,7 @@ describe("Scene", () => {
     scene.setSessions([view("a", "idle"), view("b", "idle")], 0);
     scene.setSessions([view("b", "idle")], 10);
     expect(scene.render(10, viewport).sprites.map((s) => s.id)).toEqual(["b"]);
-    scene.remove("b");
+    scene.remove("b", 20);
     expect(scene.size).toBe(0);
   });
 });
@@ -102,5 +102,109 @@ describe("HitRegionSync", () => {
     await Promise.resolve();
     sync.update(regions);
     expect(send).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("Scene group layout", () => {
+  const ms = (clip: string) => atlas.clips.get(clip)!.duration;
+  const settledAt = ms("spawn") + 10;
+  /** Device px per sprite px at the test viewport (scale 2, DPR 2). */
+  const px = 4;
+  const slot = (SPRITE_SIZE + 4) * px;
+  const xOf = (scene: Scene, id: string, now: number) =>
+    scene.render(now, viewport).sprites.find((s) => s.id === id)?.x;
+
+  it("buddies behind a leaver walk up to close the gap", () => {
+    const scene = new Scene(atlas, { reduceMotion: true });
+    scene.setSessions([view("a", "idle"), view("b", "idle"), view("c", "idle")], 0);
+    const start = xOf(scene, "c", settledAt)!;
+    scene.remove("b", settledAt);
+
+    // 1 slot = 36 sprite px at 64 sprite px/s ≈ 563 ms of walking.
+    const mid = scene.render(settledAt + 200, viewport);
+    const c = mid.sprites.find((s) => s.id === "c")!;
+    expect(c.x).toBeGreaterThan(start);
+    expect(c.x).toBeLessThan(start + slot);
+    expect(Number.isInteger(c.x)).toBe(true);
+    expect(c.frame).toEqual(
+      atlas.clips.get("walk")!.frames.find((f) => f === c.frame) ?? "walk frame",
+    );
+    expect(mid.nextChangeAt).toBeLessThanOrEqual(settledAt + 200 + 34);
+
+    expect(xOf(scene, "c", settledAt + 2000)).toBe(start + slot);
+    expect(xOf(scene, "a", settledAt + 2000)).toBe(960 - SPRITE_SIZE * px);
+  });
+
+  it("the walk depends only on time, not on how often it renders", () => {
+    const make = () => {
+      const scene = new Scene(atlas, { reduceMotion: true });
+      scene.setSessions([view("a", "idle"), view("b", "idle"), view("c", "idle")], 0);
+      scene.render(settledAt, viewport);
+      scene.remove("a", settledAt);
+      return scene;
+    };
+    const sparse = make();
+    const dense = make();
+    sparse.render(settledAt, viewport);
+    for (let t = settledAt; t < settledAt + 400; t += 16) dense.render(t, viewport);
+    expect(xOf(sparse, "c", settledAt + 400)).toBe(xOf(dense, "c", settledAt + 400));
+  });
+
+  it("a DPI change moves nobody's slot and starts no walk", () => {
+    const scene = new Scene(atlas, { reduceMotion: true });
+    scene.setSessions([view("a", "idle"), view("b", "idle")], 0);
+    scene.render(settledAt, viewport);
+    const after = scene.render(settledAt + 10, { ...viewport, devicePixelRatio: 1 });
+    expect(after.sprites[1].x).toBe(960 - 2 * SPRITE_SIZE * 2 - 4 * 2);
+  });
+
+  it("a waiting buddy stands 4 sprite px higher", () => {
+    const scene = new Scene(atlas, { reduceMotion: true });
+    scene.setSessions([view("a", "idle"), view("b", "waiting")], 0);
+    const { sprites } = scene.render(settledAt, viewport);
+    expect(sprites[0].y - sprites[1].y).toBe(4 * px);
+  });
+
+  it("overflow shows ten plus a +N chip with its own hit region", () => {
+    const scene = new Scene(atlas, { reduceMotion: true });
+    const many = Array.from({ length: 12 }, (_, i) => view(`s${i}`, "idle"));
+    scene.setSessions(many, 0);
+    const frame = scene.render(settledAt, { ...viewport, width: 4000 });
+    expect(frame.sprites).toHaveLength(10);
+    expect(frame.chip).toMatchObject({ hidden: 2, x: 4000 - SPRITE_SIZE * px - 10 * slot });
+    expect(frame.regions).toHaveLength(11);
+    const chipRegion = frame.regions[10];
+    expect(scene.chipContains(chipRegion.x + 1, chipRegion.y + 1)).toBe(true);
+    expect(scene.chipContains(frame.regions[0].x + 1, frame.regions[0].y + 1)).toBe(false);
+  });
+
+  it("expanding shows everyone; hidden buddies appear without walking", () => {
+    const scene = new Scene(atlas, { reduceMotion: true });
+    scene.setSessions(Array.from({ length: 12 }, (_, i) => view(`s${i}`, "idle")), 0);
+    scene.render(settledAt, { ...viewport, width: 4000 });
+    scene.setExpanded(true);
+    const frame = scene.render(settledAt + 1, { ...viewport, width: 4000 });
+    expect(frame.sprites).toHaveLength(12);
+    expect(frame.chip).toBeNull();
+    expect(scene.chipContains(0, 0)).toBe(false);
+    expect(frame.sprites[11].x).toBe(4000 - SPRITE_SIZE * px - 11 * slot);
+  });
+
+  it("follows the overlay corner", () => {
+    const scene = new Scene(atlas, { reduceMotion: true });
+    scene.setCorner("top-left");
+    scene.setSessions([view("a", "idle"), view("b", "waiting")], 0);
+    const { sprites } = scene.render(settledAt, viewport);
+    expect(sprites[0]).toMatchObject({ x: 0, y: 0 });
+    expect(sprites[1]).toMatchObject({ x: slot, y: 4 * px });
+  });
+
+  it("reports the CSS size the group needs", () => {
+    const scene = new Scene(atlas, { reduceMotion: true });
+    scene.setSessions([view("a", "idle"), view("b", "idle")], 0);
+    expect(scene.render(settledAt, viewport).contentSize).toEqual({
+      width: (2 * SPRITE_SIZE + 4) * 2,
+      height: (SPRITE_SIZE + 4) * 2,
+    });
   });
 });
