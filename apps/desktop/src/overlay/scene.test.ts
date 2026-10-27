@@ -235,4 +235,82 @@ describe("Scene group layout", () => {
     scene.hop("a", settledAt);
     expect(scene.render(settledAt + HOP_MS / 2, viewport).sprites[0].hop).toBe(6 * px);
   });
+
+  describe("drag and throw", () => {
+    // Bottom-right, 4 device px per sprite px: a buddy is 64 CSS px.
+    const restingScene = () => {
+      const scene = new Scene(atlas, { reduceMotion: true });
+      scene.setSessions([view("a", "idle"), view("b", "idle")], 0);
+      scene.render(settledAt, viewport);
+      return scene;
+    };
+    const grabbedClip = atlas.clips.get("grabbed")!;
+
+    it("keeps the group in place when the overlay expands around it", () => {
+      const scene = restingScene();
+      const small = scene.render(settledAt, viewport).sprites;
+      const home = { x: 2000, y: 1000, width: viewport.width, height: viewport.height };
+      const big = scene.render(settledAt, { ...viewport, width: 4000, height: 2000, home });
+      expect(big.sprites.map((s) => [s.x - home.x, s.y - home.y])).toEqual(
+        small.map((s) => [s.x, s.y]),
+      );
+      expect(big.regions[0]).toEqual({ x: 1000 + 480 - 64, y: 500 + 160 - 64, width: 64, height: 64 });
+    });
+
+    it("only grabs buddies that are on screen", () => {
+      const scene = restingScene();
+      expect(scene.grab("nobody", { x: 0, y: 0 }, settledAt)).toBe(false);
+      expect(scene.busy).toBe(false);
+      expect(scene.grab("a", { x: 440, y: 120 }, settledAt)).toBe(true);
+      expect(scene.busy).toBe(true);
+      expect(scene.isThrown("a")).toBe(true);
+      expect(scene.isThrown("b")).toBe(false);
+    });
+
+    it("a held buddy dangles after the pointer; its hit region follows", () => {
+      const scene = restingScene();
+      scene.grab("a", { x: 440, y: 120 }, settledAt); // a sits at 416,96 (CSS)
+      scene.drag({ x: 340, y: 20 }, settledAt);
+      const frame = scene.render(settledAt + 1000, viewport);
+      const a = frame.sprites.find((s) => s.id === "a")!;
+      expect(grabbedClip.frames).toContain(a.frame);
+      expect(a.x / 2).toBeCloseTo(316, 0);
+      expect(a.y / 2).toBeCloseTo(-4, 0);
+      expect(frame.regions[0].x).toBe(a.x / 2);
+      expect(frame.nextChangeAt).not.toBeNull();
+    });
+
+    it("flies, lands and walks back to its slot, then the scene sleeps again", () => {
+      const scene = restingScene();
+      const rest = scene.render(settledAt, viewport).sprites[0];
+      scene.setWorkArea({ left: -1000, top: -500, right: 480, bottom: 160 });
+      scene.grab("a", { x: 440, y: 120 }, settledAt);
+      for (let i = 1; i <= 5; i++) scene.drag({ x: 440 - 40 * i, y: 120 - 40 * i }, settledAt + i * 10);
+      scene.release(settledAt + 50);
+      let now = settledAt + 50;
+      let frame = scene.render(now, viewport);
+      let left = Infinity;
+      while (scene.busy && now < settledAt + 30_000) {
+        frame = scene.render((now += 20), viewport);
+        left = Math.min(left, frame.sprites[0].x);
+      }
+      expect(scene.busy).toBe(false);
+      expect(left).toBeLessThan(rest.x - 100); // it really flew
+      expect(frame.sprites[0]).toMatchObject({ x: rest.x, y: rest.y });
+      // Back to the idle animation's own pace, as if it had never been thrown.
+      const untouched = restingScene();
+      expect(scene.render(now + 1, viewport).nextChangeAt).toBe(
+        untouched.render(now + 1, viewport).nextChangeAt,
+      );
+    });
+
+    it("a removed session's throw is dropped", () => {
+      const scene = restingScene();
+      scene.grab("a", { x: 440, y: 120 }, settledAt);
+      scene.remove("a", settledAt);
+      expect(scene.busy).toBe(false);
+      scene.release(settledAt);
+      expect(scene.render(settledAt, viewport).sprites.map((s) => s.id)).toEqual(["b"]);
+    });
+  });
 });

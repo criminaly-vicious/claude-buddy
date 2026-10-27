@@ -3,13 +3,17 @@ import atlasJson from "./sprites/placeholder/atlas.json";
 import atlasUrl from "./sprites/placeholder/atlas.png";
 import { HitRegionSync } from "./overlay/hitSync";
 import { RenderLoop } from "./overlay/loop";
+import { flightArea, homeArea } from "./overlay/expand";
 import { cardLines, HoverState, placeCard, Rect } from "./overlay/hoverCard";
 import {
+  expandOverlay,
+  ExpandedLayout,
   focusSession,
   getOverlayAnchor,
   HitRegion,
   onOverlayAnchor,
   onOverlayPointer,
+  restoreOverlay,
   setHitRegions,
   setOverlayContentSize,
 } from "./overlay/native";
@@ -24,6 +28,8 @@ const BUDDY_SCALE = 2;
 const COLLAPSE_AFTER_MS = 1500;
 /** Space between a buddy and its hover card, in CSS pixels. */
 const CARD_GAP = 6;
+/** A press that moves further than this (CSS pixels) is a drag, not a click. */
+const DRAG_THRESHOLD = 4;
 
 const inTauri = "__TAURI_INTERNALS__" in window;
 
@@ -43,6 +49,12 @@ async function start(): Promise<void> {
   // In the browser (`pnpm dev:mock`) there is no backend to tell.
   const sync = new HitRegionSync(inTauri ? setHitRegions : async () => {});
 
+  /** The overlay as the backend last expanded it, for throws (#24). */
+  let expanded: ExpandedLayout | null = null;
+  /** Asked the backend to expand and not yet to restore. */
+  let expandRequested = false;
+  const canvasSize = () => ({ width: canvas.clientWidth, height: canvas.clientHeight });
+
   function viewport(): Viewport {
     const dpr = window.devicePixelRatio || 1;
     const width = Math.round(canvas.clientWidth * dpr);
@@ -51,7 +63,25 @@ async function start(): Promise<void> {
       canvas.width = width;
       canvas.height = height;
     }
-    return { width, height, devicePixelRatio: dpr, scale: BUDDY_SCALE };
+    const home = homeArea(canvasSize(), expanded);
+    return {
+      width,
+      height,
+      devicePixelRatio: dpr,
+      scale: BUDDY_SCALE,
+      home: {
+        x: Math.round(home.x * dpr),
+        y: Math.round(home.y * dpr),
+        width: Math.round(home.width * dpr),
+        height: Math.round(home.height * dpr),
+      },
+    };
+  }
+
+  /** A canvas point (CSS px) relative to the home area, where the scene's physics lives. */
+  function toHome(x: number, y: number): { x: number; y: number } {
+    const home = homeArea(canvasSize(), expanded);
+    return { x: x - home.x, y: y - home.y };
   }
 
   // The window follows the group's size; only real changes are sent.
@@ -84,7 +114,7 @@ async function start(): Promise<void> {
     let next = frame.nextChangeAt;
     cardRect = null;
     const openId = hover.openId(now);
-    const sprite = openId && frame.sprites.find((s) => s.id === openId);
+    const sprite = openId && !scene.isThrown(openId) && frame.sprites.find((s) => s.id === openId);
     const view = openId ? scene.view(openId) : undefined;
     if (sprite && view) {
       const lines = cardLines(view, Date.now());
@@ -109,6 +139,11 @@ async function start(): Promise<void> {
 
     sync.update(regions);
     fitWindow(content);
+    // Everyone is back in their slot: shrink to the corner again.
+    if (expandRequested && !scene.busy) {
+      expandRequested = false;
+      restoreOverlay().catch(() => {});
+    }
     return next;
   });
 
@@ -125,8 +160,46 @@ async function start(): Promise<void> {
 
   // Hovering the +N chip shows everyone; leaving the group collapses it again.
   let collapseTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // Press on a buddy: a click if it stays put, a drag once it moves.
+  let press: { id: string; x: number; y: number } | null = null;
+  let dragging = false;
+  canvas.addEventListener("pointerdown", (event) => {
+    const id = pointerTarget(event.offsetX, event.offsetY);
+    if (event.button !== 0 || id === null || id === "card") return;
+    press = { id, x: event.offsetX, y: event.offsetY };
+    canvas.setPointerCapture(event.pointerId);
+  });
+
+  function startDrag(id: string, from: { x: number; y: number }, now: number): void {
+    if (!scene.grab(id, toHome(from.x, from.y), now)) return;
+    dragging = true;
+    hover.pointer(null, now);
+    scene.setWorkArea(flightArea(canvasSize(), null));
+    if (!inTauri) return; // The browser page is the work area already.
+    expandRequested = true;
+    expandOverlay()
+      .then((layout) => {
+        if (!layout) return;
+        expanded = layout;
+        scene.setWorkArea(flightArea(canvasSize(), layout));
+        loop.invalidate();
+      })
+      .catch(() => {}); // Not expanded: it just flies inside the corner area.
+  }
+
   canvas.addEventListener("pointermove", (event) => {
-    hover.pointer(pointerTarget(event.offsetX, event.offsetY), performance.now());
+    const now = performance.now();
+    if (press && !dragging) {
+      const moved = Math.hypot(event.offsetX - press.x, event.offsetY - press.y);
+      if (moved > DRAG_THRESHOLD) startDrag(press.id, press, now);
+    }
+    if (dragging) {
+      scene.drag(toHome(event.offsetX, event.offsetY), now);
+      loop.invalidate();
+      return;
+    }
+    hover.pointer(pointerTarget(event.offsetX, event.offsetY), now);
     loop.invalidate();
     if (collapseTimer !== null) clearTimeout(collapseTimer);
     if (scene.chipContains(event.offsetX, event.offsetY)) {
@@ -139,11 +212,26 @@ async function start(): Promise<void> {
     }, COLLAPSE_AFTER_MS);
   });
 
+  // Let go: throw what was dragged, or treat it as a click.
+  const endPress = (event: PointerEvent, cancelled: boolean) => {
+    const pressed = press;
+    const wasDragging = dragging;
+    press = null;
+    dragging = false;
+    if (wasDragging) {
+      scene.release(performance.now());
+      loop.invalidate();
+    } else if (pressed && !cancelled) {
+      click(pressed.id, event);
+    }
+  };
+  canvas.addEventListener("pointerup", (event) => endPress(event, false));
+  canvas.addEventListener("pointercancel", (event) => endPress(event, true));
+
   // Click on a buddy: focus its terminal; it hops when that worked. The
   // browser mock has no terminals, so it always hops.
-  canvas.addEventListener("click", (event) => {
-    const id = pointerTarget(event.offsetX, event.offsetY);
-    if (id === null || id === "card") return;
+  function click(id: string, event: PointerEvent): void {
+    if (pointerTarget(event.offsetX, event.offsetY) !== id) return;
     const focused = inTauri ? focusSession(id) : Promise.resolve(true);
     focused
       .then((ok) => {
@@ -152,7 +240,7 @@ async function start(): Promise<void> {
         loop.invalidate();
       })
       .catch(() => {}); // Best effort: nothing to show when focus fails.
-  });
+  }
 
   // In the browser the page sees the pointer leave; in the app the overlay
   // turns click-through first, so the backend says when it left.
