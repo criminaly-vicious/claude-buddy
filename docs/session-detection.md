@@ -127,15 +127,27 @@ Each line is one JSON object with a `type`. Most lines also carry `uuid`, `paren
 
 Unknown `type` values must be ignored, not fail the parser.
 
-**Privacy:** transcripts contain full prompts, file contents, tool results and model output. The watcher reads only `type`, `subtype`, `message.content[].type`, `message.content[].name`, `message.stop_reason`, `cwd`, `sessionId` and `timestamp`, and never stores or forwards any text.
+**Privacy:** transcripts contain full prompts, file contents, tool results and model output. The watcher reads only `type`, `subtype`, `isSidechain`, `message.content[].type`, `message.content[].name`, `message.stop_reason`, `cwd` and `sessionId`. For a `tool_use` block it also passes `message.content[].input` to `bridge_protocol::target::derive`, the same [target rules](architecture.md#target-rules) `buddy-hook` uses, and keeps only the resulting short target. It never stores or forwards any other text.
 
 ### Inference
 
-When hooks are not installed (or for sessions started before the app), the watcher:
+Implemented in `apps/desktop/src-tauri/src/watcher/` ([ADR-0010](../.context/decisions/0010-notify-transcript-watcher.md)). When hooks are not installed (or for sessions started before the app), the watcher:
 
-1. Lists transcripts modified in the last 10 minutes at startup (skipping `subagents/`).
-2. Watches the folder for changes and tails appended lines.
-3. Infers state from the last relevant lines: an assistant `tool_use` block gives the tool; an assistant `text` block with `stop_reason: end_turn` or a `system`/`stop_hook_summary` → `idle`; no writes for N seconds while a tool is pending → probably `waiting`.
+1. At startup, reads transcripts modified in the last **30 minutes** (the registry's transcript TTL), skipping `subagents/`.
+2. Watches the projects folder with `notify` and, 150 ms after a burst of changes, reads only the **new complete lines** of each changed file. It stores an offset per file; a file that shrank is read again from the start. A file seen for the first time is read from its last 64 KiB only, so a long session does not replay hours of history.
+3. Maps each relevant line to a registry event with `source: transcript`:
+
+| Line | Registry event |
+| --- | --- |
+| `user` with string content (typed prompt) | `PromptSubmitted` |
+| `assistant` with a `tool_use` block | `ToolStarted` (tool name + derived target) |
+| `user` with `tool_result` blocks | `ToolFinished` (last tool of that file) |
+| `assistant` `text` with `stop_reason: end_turn`, or `system`/`stop_hook_summary` | `TurnEnded` |
+| Sidechain (`isSidechain: true`), bookkeeping, attachments, unknown types, invalid JSON | Ignored |
+
+`cwd` and the session ID come from the lines themselves, never from the folder name.
+
+Not implemented yet: inferring `waiting` from silence while a tool is pending. Without hooks, a permission prompt shows as the tool's state until the user answers.
 
 Fallback states are lower confidence; the hover card shows a small "approximate" hint and suggests installing hooks.
 

@@ -143,7 +143,7 @@ The whole body must be at most **16 KiB**. Strings are counted in Unicode scalar
 
 #### `target` rules
 
-`buddy-hook` derives `target` from `tool_input` before sending, then cuts it to 60 chars. Any tool not listed sends no `target`. When in doubt, send no target: an empty hover line is fine, a leaked secret is not.
+`buddy-hook` derives `target` from `tool_input` before sending, then cuts it to 60 chars. The rules are implemented once in `bridge_protocol::target::derive`, which the transcript watcher also uses. Any tool not listed sends no `target`. When in doubt, send no target: an empty hover line is fine, a leaked secret is not.
 
 | Tool | `target` |
 | --- | --- |
