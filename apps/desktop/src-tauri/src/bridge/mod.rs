@@ -42,7 +42,7 @@ fn watch_process(pid: u32, on_exit: Box<dyn FnOnce() + Send>) -> io::Result<()> 
 pub struct Bridge {
     // Field order is drop order: stop accepting requests, then the driver, then the file.
     server: server::Server,
-    _driver: Driver,
+    driver: Driver,
     _file: file::FileGuard,
 }
 
@@ -77,13 +77,18 @@ impl Bridge {
         let file = file::write(path, &contents)?;
         Ok(Self {
             server,
-            _driver: driver,
+            driver,
             _file: file,
         })
     }
 
     pub fn port(&self) -> u16 {
         self.server.port
+    }
+
+    /// A sender into the driver, for other event sources (the transcript watcher).
+    pub fn inputs(&self) -> Sender<Input> {
+        self.driver.inputs.clone()
     }
 }
 
@@ -196,7 +201,8 @@ fn lock(registry: &Mutex<Registry>) -> std::sync::MutexGuard<'_, Registry> {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-fn now() -> Millis {
+/// Wall-clock time in epoch milliseconds, the registry's time base.
+pub fn now() -> Millis {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as Millis)
