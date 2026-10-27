@@ -28,7 +28,7 @@ For every worker branch and open PR:
 
 | Situation | Action |
 | --- | --- |
-| PR targets `develop`, CI green, review clean | Squash-merge with the PR title as commit title, delete the branch, tell the worker. |
+| PR targets `develop`, CI green, review clean | Merge with a merge commit (never squash or rebase), PR title as commit title, delete the branch, tell the worker. |
 | Small, local defect (typo, regex, missing scope, stale link) | `send_message` to the owning worker with file, line, the fix you expect and "push to your branch". Re-review on its next push. |
 | Two workers touch the same files | Pick a merge order, tell the later one to merge `develop` after the first merges. Never let both edit the same file at once. |
 | Worker is blocked on a question the repo or docs answer | Answer it yourself from the repo and unblock it. |

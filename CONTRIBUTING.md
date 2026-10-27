@@ -24,7 +24,7 @@ cargo test        # Rust core tests
 3. **Commits** - small, Conventional Commits, referencing the issue.
 4. **PR** - target `develop`, fill in the template, title is a conventional commit.
 5. **Review** - at least one approval, CI green, conversations resolved.
-6. **Merge** - squash merge; the PR title becomes the commit message.
+6. **Merge** - merge commit, never squash or rebase (ADR-0008); the PR title becomes the merge commit title.
 
 ## Commit convention
 

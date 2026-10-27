@@ -38,3 +38,4 @@ Shared memory for humans and AI agents. Kept small and current.
 | [0005](decisions/0005-original-character-art.md) | Original character art, no official branding | Accepted |
 | [0006](decisions/0006-git-flow-conventional-commits.md) | Git Flow + Conventional Commits | Accepted |
 | [0007](decisions/0007-branch-naming.md) | Branch naming convention | Accepted |
+| [0008](decisions/0008-merge-commits.md) | Merge commits instead of squash | Accepted |
