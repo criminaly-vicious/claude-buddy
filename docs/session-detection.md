@@ -223,7 +223,7 @@ The mapping lives in one table in the registry so it is easy to tune.
 
 1. From `CLAUDE_PID`, walk up the parent chain to the first process that owns a visible top-level window (`WindowsTerminal.exe`, `Code.exe`, ...).
 2. `SetForegroundWindow` on that window (restore if minimised).
-3. Windows Terminal hosts many tabs in one window: MVP focuses the window only. Tab-level focus is a later spike (#25, UI Automation).
+3. Windows Terminal hosts many tabs in one window: MVP focuses the window only. Selecting the right tab is researched in [Windows Terminal tabs](#windows-terminal-tabs).
 
 Implemented in `apps/desktop/src-tauri/src/win/focus.rs` (pure, tested everywhere) and `focus_win32.rs`:
 - **Which process:** the overlay sends only the session id (`focus_session`); the PID comes from the registry, so the page cannot point the backend at an arbitrary process.
@@ -232,6 +232,59 @@ Implemented in `apps/desktop/src-tauri/src/win/focus.rs` (pure, tested everywher
 - **Classic console fallback:** a classic console window belongs to a `conhost.exe` that is a child of the shell, not a parent of the session, so the chain misses it. When the chain finds nothing, `AttachConsole(pid)` + `GetConsoleWindow` + `FreeConsole` gives the console window. If it is hidden (a pseudo console, e.g. Windows Terminal as the default terminal), its visible owner is used instead. Skipped when the app already has a console (debug builds), so the dev console is never detached.
 - **Foreground lock:** the click on the overlay normally lets the app call `SetForegroundWindow`. If Windows still refuses, the app attaches to the foreground thread's input (`AttachThreadInput`), retries, and detaches. It never sends keystrokes and never focuses anything without a click.
 - **Result:** `true` only when the window is in front afterwards; the buddy then hops. Any failure is silent.
+
+## Windows Terminal tabs
+
+Spike [#25](https://github.com/criminaly-vicious/claude-buddy/issues/25): can a click focus the exact Windows Terminal (WT) tab of a session, not just its window?
+
+> **⚠ Windows: not verified.** This spike ran without Windows: it is based on the WT and Claude Code docs, the Win32/UI Automation APIs, and a prototype that type-checks for Windows but has not been run. Run the prototype (below) and tick the [checklist](#windows-checklist) before building on it.
+
+### The gap
+
+From `CLAUDE_PID` the parent chain reaches `WindowsTerminal.exe`, but that says nothing about which window or tab. One WT process can host several windows, each with several tabs, and each tab one or more panes. Neither the process tree nor any WT API maps a process to a tab.
+
+### Options
+
+| Approach | Verdict | Why |
+| --- | --- | --- |
+| `wt.exe -w <window> focus-tab -t <index>` | No (alone) | It takes a tab **index** and a window id or name. There is no command to list windows or tabs, window ids are not visible from outside, and `-w 0` means "most recently used window", not "the session's window". It also starts a process per click. ([docs](https://learn.microsoft.com/en-us/windows/terminal/command-line-arguments)) |
+| `WT_SESSION` environment variable | No | Every WT pane sets a GUID that `claude` (and our hook) inherit, but nothing in WT accepts it to focus a tab. |
+| Sending the "switch to tab N" shortcut | No | Sends input, depends on the user's key bindings, and still needs the index. Against the "never sends keystrokes" rule above. |
+| **UI Automation + console title** | **Yes, best effort** | See below. |
+
+### UI Automation + console title
+
+1. **Tabs.** For each top-level window of class `CASCADIA_HOSTING_WINDOW_CLASS` (WT), UI Automation (UIA) lists the tab strip's `TabItem` elements. Each has a `Name` (the tab's title) and a `SelectionItem` pattern whose `Select()` switches to that tab. This lists every WT window, which also fixes picking the wrong WT window when several are open.
+2. **The session's title.** `AttachConsole(CLAUDE_PID)` + `GetConsoleTitleW` + `FreeConsole` reads the title of the session's pseudo console. That is the title Claude Code set, which WT shows on the tab. The app already attaches this way for the classic console fallback, under the same rules (skipped when the app has its own console).
+3. **Match.** Claude Code titles the tab after the conversation and, in terminals without the OSC 7501 status protocol, puts a status glyph in front that changes with the state ([docs](https://code.claude.com/docs/en/terminal-config#see-session-status-in-your-terminal)). Drop a leading non-alphanumeric word from both titles, then compare. Act only on **exactly one** matching tab: `Select()` it, then bring its window to the front as today. No match or several matches: fall back to window-level focus, as now.
+
+### Limits
+
+- **Same title twice** (for example, two sessions that just started, or a session started with `CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1`): ambiguous, window only.
+- **Title not from Claude Code:** a profile with `suppressApplicationTitle`, or a tab the user renamed, shows another title. No match, window only.
+- **Split panes:** a tab shows the title of its focused pane. A session in an unfocused pane does not match, and UIA has no pane-level selection, so the pane is never focused.
+- **The title is a moving target:** it changes with the conversation. It is read at click time, so this matters only for a change in the same few milliseconds.
+- **WT internals:** the class name and the tab strip's UIA shape are WT implementation details, not a public API. They can change between WT versions. The fallback keeps a change from doing harm.
+
+### Cost
+
+- **Dependencies:** UIA is COM. `windows-sys` (used today) has no COM wrappers, so this needs the `windows` crate with the `Win32_UI_Accessibility`, `Win32_System_Com` and `Win32_System_Ole` features. `windows` 0.62 is already in `Cargo.lock` through Tauri, so it adds no new crate, only compiled features. A dedicated crate (e.g. `uiautomation`) is not needed. Choosing this is an ADR in the feature issue.
+- **Runtime:** only on a click, on a worker thread with its own COM apartment. Nothing runs while idle, so the idle budget is untouched. Expected cost is tens of milliseconds per click; the prototype prints timings to confirm.
+
+### Prototype
+
+`tools/spikes/wt-tabs/` is a standalone Rust program outside the app's workspace. On Windows, with a few sessions open in WT:
+
+```powershell
+cargo run --manifest-path tools/spikes/wt-tabs/Cargo.toml                 # list WT windows and tabs
+cargo run --manifest-path tools/spikes/wt-tabs/Cargo.toml -- <CLAUDE_PID>  # select that session's tab
+```
+
+To get a session's `CLAUDE_PID`, ask Claude in that session to run `echo $CLAUDE_PID` (Bash) or `$env:CLAUDE_PID` (PowerShell). The program prints the console title it read, every tab it found, what it matched, and how long each step took.
+
+### Recommendation
+
+Worth building as a best-effort upgrade of the existing click, if the prototype confirms the checklist items below. Window-level focus stays the fallback for every case it cannot settle.
 
 ## Windows checklist
 
@@ -245,3 +298,6 @@ Not verifiable from the Linux capture. Check on Windows 10/11 before implementin
 - [ ] Clicking a buddy focuses the right window under Windows Terminal, classic PowerShell/cmd (conhost), Windows Terminal as the default terminal, and the VS Code terminal, including when minimised and when another app is in front.
 - [ ] `Notification` with `permission_prompt` and `idle_prompt` fires in an interactive session.
 - [ ] Settings watcher picks up installer changes in a running session.
+- [ ] Windows Terminal tabs ([prototype](#prototype)): the tab strip lists one `TabItem` per tab with the visible title, in a window of class `CASCADIA_HOSTING_WINDOW_CLASS`, including with several WT windows open.
+- [ ] `AttachConsole(CLAUDE_PID)` + `GetConsoleTitleW` returns the title the tab shows, while Claude Code is working and while it is idle.
+- [ ] `Select()` switches tabs without stealing keyboard focus from the wrong pane, and the whole click stays under about 100 ms with 10+ tabs.
