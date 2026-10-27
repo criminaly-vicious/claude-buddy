@@ -3,7 +3,8 @@
 //!
 //! Changes apply live: corner and monitor move the overlay, the idle
 //! timeout reaches the registry, scale and reduce motion go to the overlay
-//! page through [`EVENT_CONFIG`]. Every change is saved at once.
+//! page through [`EVENT_CONFIG`], start with Windows writes the Run key and
+//! the hotkey is re-registered (#29). Every change is saved at once.
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -15,7 +16,7 @@ use crate::bridge::{Bridge, Input};
 use crate::config::{self, AppConfig};
 use crate::installer::HookInstaller;
 use crate::registry::{Millis, Registry};
-use crate::win::{Anchor, Overlay};
+use crate::win::{autostart, hotkey, Anchor, Overlay};
 
 /// Label of the settings window.
 pub const SETTINGS_LABEL: &str = "settings";
@@ -40,6 +41,80 @@ impl ConfigState {
 
     pub fn get(&self) -> AppConfig {
         lock(&self.config).clone()
+    }
+}
+
+/// Start with Windows and the global hotkey: what went wrong last time
+/// they were applied, for the settings window.
+#[derive(Default)]
+pub struct Integrations {
+    #[cfg(windows)]
+    hotkey: Option<hotkey::HotkeyService>,
+    hotkey_error: Mutex<Option<String>>,
+    autostart_error: Mutex<Option<String>>,
+}
+
+impl Integrations {
+    /// Starts the hotkey thread; a press shows or hides the buddies.
+    pub fn start(app: &AppHandle) -> Self {
+        #[cfg(windows)]
+        {
+            let handle = app.clone();
+            let service = hotkey::HotkeyService::start(move || {
+                let visible = handle.state::<Arc<Overlay>>().visible();
+                crate::tray::set_buddies_visible(&handle, !visible);
+            });
+            if let Err(error) = &service {
+                eprintln!("claude-buddy: hotkey thread not started: {error}");
+            }
+            Self {
+                hotkey: service.ok(),
+                ..Self::default()
+            }
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = app;
+            Self::default()
+        }
+    }
+
+    fn set_hotkey(&self, text: Option<&str>) -> Result<(), String> {
+        let parsed = text
+            .map(hotkey::parse)
+            .transpose()
+            .map_err(|e| format!("{}: {e}", text.unwrap_or_default()))?;
+        #[cfg(windows)]
+        {
+            match &self.hotkey {
+                Some(service) => service.set(parsed),
+                None if parsed.is_none() => Ok(()),
+                None => Err("the hotkey could not be set up".into()),
+            }
+        }
+        #[cfg(not(windows))]
+        {
+            match parsed {
+                None => Ok(()),
+                Some(_) => Err("global hotkeys are only available on Windows".into()),
+            }
+        }
+    }
+}
+
+/// Startup: point an existing autostart entry at this executable, and let
+/// the saved config follow the real autostart state (Task Manager can change it).
+pub fn sync_autostart(state: &ConfigState) {
+    autostart::repair();
+    let Some(real) = autostart::is_enabled() else {
+        return;
+    };
+    let mut config = lock(&state.config);
+    if config.start_with_windows != real {
+        config.start_with_windows = real;
+        if let Some(path) = &state.path {
+            let _ = config::save(path, &config);
+        }
     }
 }
 
@@ -85,6 +160,18 @@ pub fn apply(app: &AppHandle, config: &AppConfig) {
             let _ = bridge.inputs().send(Input::Wake);
         }
     }
+    if let Some(integrations) = app.try_state::<Integrations>() {
+        *lock(&integrations.hotkey_error) = integrations.set_hotkey(config.hotkey.as_deref()).err();
+        let autostart = match autostart::is_enabled() {
+            Some(real) if real != config.start_with_windows => {
+                autostart::set_enabled(config.start_with_windows).err()
+            }
+            // Unsupported here: only complain when someone asks for it.
+            None if config.start_with_windows => autostart::set_enabled(true).err(),
+            _ => None,
+        };
+        *lock(&integrations.autostart_error) = autostart;
+    }
 }
 
 #[tauri::command]
@@ -99,14 +186,38 @@ pub fn set_config(
     state: tauri::State<'_, ConfigState>,
     config: AppConfig,
 ) -> Result<AppConfig, String> {
-    let config = config.sanitized();
+    let mut config = config.sanitized();
+    apply(&app, &config);
+    // Start with Windows shows what the registry really says, even if
+    // turning it on or off just failed.
+    if let Some(real) = autostart::is_enabled() {
+        config.start_with_windows = real;
+    }
     if let Some(path) = &state.path {
         config::save(path, &config).map_err(|e| format!("could not save settings: {e}"))?;
     }
     *lock(&state.config) = config.clone();
-    apply(&app, &config);
     let _ = app.emit(EVENT_CONFIG, &config);
     Ok(config)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IntegrationStatus {
+    /// Whether Claude Buddy starts with Windows; `None` where unsupported.
+    pub autostart: Option<bool>,
+    pub autostart_error: Option<String>,
+    /// Why the hotkey is not active (bad text, taken by another app).
+    pub hotkey_error: Option<String>,
+}
+
+#[tauri::command]
+pub fn integration_status(integrations: tauri::State<'_, Integrations>) -> IntegrationStatus {
+    IntegrationStatus {
+        autostart: autostart::is_enabled(),
+        autostart_error: lock(&integrations.autostart_error).clone(),
+        hotkey_error: lock(&integrations.hotkey_error).clone(),
+    }
 }
 
 #[derive(Serialize)]

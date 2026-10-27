@@ -36,7 +36,7 @@
 | Session Registry | Rust | Single source of truth. Merges both sources, runs the [state machine](session-detection.md#state-machine), expires dead sessions, emits diffs to the UI. |
 | Hook Installer | Rust | Adds/removes our hook entries in `~/.claude/settings.json` with backup and key-preserving merge. |
 | Overlay | TypeScript, Canvas 2D | Transparent, frameless, always-on-top, click-through window covering the chosen corner. Draws buddies from sprite sheets, runs physics, shows hover card. |
-| Win Integration | Rust (`windows-sys`), `src-tauri/src/win/` | Overlay window: corner anchoring on the chosen monitor's work area, DPI and display changes, click-through except over regions registered with `set_hit_regions` ([ADR-0011](../.context/decisions/0011-overlay-click-through.md)), expand to the work area for throws, focus the terminal window owning a session PID. Later: autostart, global hotkey. |
+| Win Integration | Rust (`windows-sys`), `src-tauri/src/win/` | Overlay window: corner anchoring on the chosen monitor's work area, DPI and display changes, click-through except over regions registered with `set_hit_regions` ([ADR-0011](../.context/decisions/0011-overlay-click-through.md)), expand to the work area for throws, focus the terminal window owning a session PID, start with Windows (`win/autostart.rs`) and the global show/hide hotkey (`win/hotkey.rs`), see [App config](#app-config). |
 | Tray & Settings | Tauri tray (`src-tauri/src/tray/`) + settings window (`src-tauri/src/settings.rs`, `src/settings/`) | Show/hide buddies (hidden: window hidden, nothing rendered), install/repair and uninstall hooks with a confirmation and a bridge health check, settings ([below](#app-config)), quit. One instance per Windows session; a second launch shows the first one's buddies ([ADR-0012](../.context/decisions/0012-tray-dialogs-and-single-instance.md)). |
 
 ## Data model
@@ -78,14 +78,15 @@ The app's own settings live next to `bridge.json` (same folder rules as below), 
   "idleSleepMinutes": 5,
   "reduceMotion": false,
   "startWithWindows": false,
-  "hotkey": null
+  "hotkey": "Ctrl+Alt+B"
 }
 ```
 
 - `monitor`: index into the monitor list, `null` for the primary monitor. `scale`: 1, 2 or 3 CSS px per sprite pixel. `idleSleepMinutes`: 1–120.
-- `startWithWindows` and `hotkey` are stored only; autostart and the hotkey come with #29.
+- `startWithWindows`: per user, no admin, a `Claude Buddy` value under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` holding the quoted path of the app. The real state is "that value exists and Task Manager has not switched it off" (`...\Explorer\StartupApproved\Run`, odd first byte = off). Turning it on from the settings also clears a Task Manager switch-off, so the checkbox means what it shows. At startup the config follows the real state, and release builds point an existing entry at the running executable (after a move or update); debug builds never write it on their own.
+- `hotkey`: the global show/hide hotkey (same path as the tray's Show/Hide), default `Ctrl+Alt+B`, `null` for none. Ctrl, Alt or Win plus one of A–Z, 0–9, F1–F24 or Space; Shift is allowed as an extra. Saved in canonical spelling. Registered with `RegisterHotKey` on a dedicated thread with its own message loop (hotkeys belong to the thread that registers them; changes are posted to it). If the text is not a valid hotkey or another app already holds it, the settings window says so under the field and the app keeps running without a hotkey. Both use plain Win32, as in [ADR-0012](../.context/decisions/0012-tray-dialogs-and-single-instance.md); no new crates.
 - Read leniently (`src-tauri/src/config.rs`): a bad or unknown field falls back to its default without losing the others, out-of-range values are clamped, a newer `version` is read field by field. A file that is not JSON is renamed to `config.json.invalid` and the defaults are used. Writes go through a temporary file and a rename.
-- **Applied live** from the settings window (`set_config` saves, applies and emits `config:changed`): corner and monitor re-anchor the overlay, the idle timeout reaches the registry (the driver is woken to recompute its deadline), scale and reduce motion are picked up by the overlay page. At startup the saved values are applied before the first frame.
+- **Applied live** from the settings window (`set_config` applies, saves and emits `config:changed`): corner and monitor re-anchor the overlay, the idle timeout reaches the registry (the driver is woken to recompute its deadline), scale and reduce motion are picked up by the overlay page, the Run value is written or removed, and the hotkey is re-registered. `startWithWindows` is saved as the registry really is afterwards. `integration_status` gives the settings window the real autostart state and any autostart or hotkey error. At startup the saved values are applied before the first frame.
 - The settings window also shows the hook status (`hook_status`): installed or not, the settings file, and when the last hook event arrived since start. It refreshes when the window gets focus or on "Refresh", never on a timer.
 
 ### Discovery file: `bridge.json`
