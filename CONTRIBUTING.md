@@ -142,3 +142,22 @@ AI agents (Claude Code and others) contribute under the same rules, plus:
 ## Releases and changelog
 
 SemVer. `CHANGELOG.md` follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Add entries under `[Unreleased]`; the release branch moves them under the new version.
+
+### Building the installer
+
+`pnpm bundle` builds `buddy-hook` and the app in release mode and writes the per-user NSIS installer to `target/release/bundle/nsis/` (Windows only). The bundle-only settings (installer mode, `buddy-hook.exe` next to the app, uninstaller hooks in `apps/desktop/src-tauri/windows/installer-hooks.nsh`) live in `apps/desktop/src-tauri/tauri.bundle.conf.json`, so plain `cargo build`/`cargo test` never need a release `buddy-hook`.
+
+CI builds the installer on every PR (job `installer`) and uploads it as the `installer` artifact, so a PR can be tested on a real machine before merging. The job fails if the installer is over 15 MB.
+
+### Cutting a release
+
+Only the maintainer creates release branches, tags and releases.
+
+1. `git switch -c release/X.Y.Z develop`.
+2. Set the version to `X.Y.Z` in `apps/desktop/src-tauri/tauri.conf.json`, `[workspace.package]` in `Cargo.toml` and `apps/desktop/package.json`. Move the `[Unreleased]` entries in `CHANGELOG.md` under `## [X.Y.Z] - YYYY-MM-DD`. Commit as `chore(release): X.Y.Z`.
+3. Open a PR `release/X.Y.Z` → `main`, stabilise there (fixes only), merge it with a merge commit.
+4. Tag the merge commit on `main` and push the tag: `git tag -a vX.Y.Z -m "Claude Buddy X.Y.Z"` then `git push origin vX.Y.Z`.
+5. `.github/workflows/release.yml` checks that the tag is on `main` and matches the versions, builds the installer, and creates a **draft** GitHub Release with the installer and the `## [X.Y.Z]` section of `CHANGELOG.md` as notes. Review it, then publish it.
+6. Back-merge: open a PR `main` → `develop` (merge commit) so `develop` gets the version bump and changelog.
+
+Hotfixes follow the same steps from `hotfix/X.Y.Z`, branched from `main`.

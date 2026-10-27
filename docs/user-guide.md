@@ -27,13 +27,13 @@ Claude Buddy puts a small animated buddy in the corner of your screen for every 
 
 ## Install
 
-**From a release (coming soon).** Once v0.1.0 is published, download `Claude Buddy_<version>_x64-setup.exe` from the [Releases page](https://github.com/criminaly-vicious/claude-buddy/releases) and run it. It installs for your user only and needs no admin rights.
+**From a release (coming soon).** Once v0.1.0 is published, download `Claude Buddy_<version>_x64-setup.exe` from the [Releases page](https://github.com/criminaly-vicious/claude-buddy/releases) and run it. It installs for your user only (under `%LOCALAPPDATA%`) and needs no admin rights.
 
 **From source (now).** Follow the setup in [CONTRIBUTING.md](../CONTRIBUTING.md#setup), then:
 
 ```bash
 pnpm install
-pnpm tauri build
+pnpm bundle
 ```
 
 The installer is written to `target/release/bundle/nsis/`. Run it, or use `pnpm tauri dev` to try the app without installing.
@@ -207,10 +207,10 @@ No. It only observes. It never sends input to a session or approves anything for
 
 ### How do I uninstall?
 
-1. Tray menu → **Uninstall hooks…**. This removes only Claude Buddy's entries from your Claude Code settings and keeps a backup. Do this first, so no stale hook stays behind.
-2. Quit Claude Buddy.
-3. Uninstall it from **Settings → Apps → Installed apps** (Windows 11) or **Apps & features** (Windows 10).
-4. Optional: delete `%APPDATA%\claude-buddy\` and the `settings.json.claude-buddy-backup-*` files next to your Claude Code settings.
+1. Uninstall it from **Settings → Apps → Installed apps** (Windows 11) or **Apps & features** (Windows 10).
+2. The uninstaller asks whether to also remove Claude Buddy's hooks from your Claude Code settings. Answer **Yes**: it removes only Claude Buddy's entries and keeps a backup. If you keep them, Claude Code reports a hook error in every session, because the hook program is gone. (You can also remove them beforehand with tray menu → **Uninstall hooks…**.)
+3. Tick **Delete the application data** to also remove your Claude Buddy settings (`%APPDATA%\claude-buddy\`).
+4. Optional: delete the `settings.json.claude-buddy-backup-*` files next to your Claude Code settings.
 
 ### How heavy is it?
 
