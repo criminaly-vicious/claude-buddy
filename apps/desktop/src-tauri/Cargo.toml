@@ -20,6 +20,7 @@ serde_json = "1"
 bridge-protocol = { path = "../../../crates/bridge-protocol" }
 tiny_http = "0.12"
 getrandom = "0.3"
+notify = "8"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [

@@ -4,6 +4,7 @@
 pub mod bridge;
 pub mod liveness;
 pub mod registry;
+pub mod watcher;
 
 use std::sync::{Arc, Mutex};
 
@@ -11,6 +12,7 @@ use tauri::{Emitter, Manager, RunEvent};
 
 use bridge::Bridge;
 use registry::{Change, Registry, EVENT_REMOVE, EVENT_SNAPSHOT, EVENT_UPDATE};
+use watcher::TranscriptWatcher;
 
 type SharedRegistry = Arc<Mutex<Registry>>;
 
@@ -24,12 +26,29 @@ fn debug_sessions(registry: tauri::State<'_, SharedRegistry>) -> Vec<registry::S
         .unwrap_or_default()
 }
 
+/// Fallback source for sessions without hooks. Missing `~/.claude/projects`
+/// (Claude Code never ran) just means no fallback.
+fn start_transcript_watcher(app: &tauri::App, inputs: std::sync::mpsc::Sender<bridge::Input>) {
+    let Some(dir) = watcher::projects_dir().filter(|dir| dir.is_dir()) else {
+        return;
+    };
+    match TranscriptWatcher::start(&dir, inputs, bridge::now) {
+        Ok(watcher) => {
+            *app.state::<Mutex<Option<TranscriptWatcher>>>()
+                .lock()
+                .unwrap() = Some(watcher);
+        }
+        Err(error) => eprintln!("claude-buddy: transcript watcher not started: {error}"),
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let registry: SharedRegistry = Arc::default();
     let builder = tauri::Builder::default()
         .manage(Arc::clone(&registry))
         .manage(Mutex::new(None::<Bridge>))
+        .manage(Mutex::new(None::<TranscriptWatcher>))
         .setup(move |app| {
             let handle = app.handle().clone();
             let emit = move |change: Change| {
@@ -41,6 +60,7 @@ pub fn run() {
             // Without a bridge the app still runs; buddies just never appear.
             match Bridge::start(Arc::clone(&registry), emit) {
                 Ok(bridge) => {
+                    start_transcript_watcher(app, bridge.inputs());
                     *app.state::<Mutex<Option<Bridge>>>().lock().unwrap() = Some(bridge);
                 }
                 Err(error) => eprintln!("claude-buddy: bridge not started: {error}"),
@@ -58,6 +78,9 @@ pub fn run() {
         .expect("error while building Claude Buddy")
         .run(|app, event| {
             if let RunEvent::Exit = event {
+                if let Ok(mut watcher) = app.state::<Mutex<Option<TranscriptWatcher>>>().lock() {
+                    watcher.take();
+                }
                 // Stops the server and deletes bridge.json.
                 if let Ok(mut bridge) = app.state::<Mutex<Option<Bridge>>>().lock() {
                     bridge.take();
