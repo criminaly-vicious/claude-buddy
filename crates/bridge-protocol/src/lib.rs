@@ -2,14 +2,18 @@
 //! (server), protocol version 1. The prose spec is the "Bridge protocol"
 //! section of docs/architecture.md; this crate is its single implementation.
 //!
-//! Only types, limits and path resolution live here. Deriving `target` from
-//! `tool_input` is the client's job, and HTTP handling is the server's.
+//! Types, limits, path resolution and the `target` sanitising rules live
+//! here; HTTP handling is the server's job. [`target::derive`] is shared by
+//! every client that builds a `target` (`buddy-hook` and the transcript
+//! watcher), so the privacy rules exist once.
 
 use std::ffi::OsString;
 use std::fmt;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
+
+pub mod target;
 
 pub const PROTOCOL_VERSION: u32 = 1;
 pub const EVENTS_PATH: &str = "/v1/events";
