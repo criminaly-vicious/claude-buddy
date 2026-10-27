@@ -8,7 +8,7 @@ A Windows tray app (Tauri 2, Rust core, TypeScript Canvas overlay) that shows an
 
 ## Rules
 
-- **Issue first.** Every change maps to one GitHub issue. Branch `feature/<issue>-<slug>` or `fix/<issue>-<slug>` from `develop` (agent branches `claude/*` follow the same rules).
+- **Issue first.** Every change maps to one GitHub issue. Branch `<type>/<issue>-<description>` from `develop`, where type is `feature`, `bugfix`, `docs`, `chore` or `spike` (e.g. `feature/27-tray-menu`); full rules in `CONTRIBUTING.md#branch-naming`. Tool-assigned `claude/*` names are accepted.
 - **Always open a PR.** Every piece of work an agent creates is pushed and opened as a pull request (target `develop`, template filled in, linked issue). Never leave work only on a branch.
 - **Conventional Commits** for every commit and PR title (`feat(bridge): add token auth`). Reference the issue in the body (`Refs #12` / `Closes #12`).
 - **Decisions are written down.** Any choice of library, format, protocol or architecture goes in `.context/decisions/NNNN-title.md` (copy `0000-template.md`). Do not silently reverse an accepted ADR: write a new one that supersedes it.

@@ -12,7 +12,7 @@ Shared memory for humans and AI agents. Kept small and current.
 ## How agents collaborate
 
 1. The **master agent** ([brief](agents/master.md)) owns planning: keeps `docs/roadmap.md` and `docs/backlog.md` in sync with GitHub issues, splits work, and assigns issues to role agents.
-2. A role agent takes **one issue**, creates its branch from `develop`, reads the docs listed in its brief, and works only inside its area. Cross-area changes go back to the master as a new issue.
+2. A role agent takes **one issue**, creates its branch from `develop` (`<type>/<issue>-<description>`, see `CONTRIBUTING.md#branch-naming`), reads the docs listed in its brief, and works only inside its area. Cross-area changes go back to the master as a new issue.
 3. Decisions made while working become ADRs in the same PR.
 4. The PR description lists what was done, what was verified, and open questions. The master (or a human) reviews and merges.
 
@@ -36,3 +36,4 @@ Shared memory for humans and AI agents. Kept small and current.
 | [0004](decisions/0004-pixel-art-canvas-rendering.md) | Pixel art on Canvas 2D, no UI framework in overlay | Accepted |
 | [0005](decisions/0005-original-character-art.md) | Original character art, no official branding | Accepted |
 | [0006](decisions/0006-git-flow-conventional-commits.md) | Git Flow + Conventional Commits | Accepted |
+| [0007](decisions/0007-branch-naming.md) | Branch naming convention | Accepted |
