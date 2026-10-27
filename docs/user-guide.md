@@ -131,7 +131,7 @@ A press that barely moves counts as a click, not a drag.
 | **Settings…** | Opens the [settings window](#settings) |
 | **Quit Claude Buddy** | Closes the app. Claude Code sessions are not affected |
 
-**(coming soon)** Start with Windows and a global hotkey to show or hide the buddies (default `Ctrl+Alt+B`).
+Press `Ctrl+Alt+B` (or [your hotkey](#settings)) to show or hide the buddies without opening the menu. To start Claude Buddy when you sign in, turn on **Start with Windows** in [Settings](#settings).
 
 ## Settings
 
@@ -147,7 +147,12 @@ Tray menu → **Settings…** opens the settings window. Changes apply right awa
 | Fall asleep after | 1 to 120 minutes idle | 5 minutes |
 | Reduce motion | Turns off the random idle animations | Off |
 
-**Startup:** start with Windows and a show/hide hotkey **(coming soon, [#29](https://github.com/criminaly-vicious/claude-buddy/issues/29))**.
+**Startup**
+
+| Setting | What it does | Default |
+| --- | --- | --- |
+| Start with Windows | Starts Claude Buddy when you sign in. Per user, no admin needed. It is the same switch as Claude Buddy in Task Manager → **Startup apps**: turning it off there shows here, and turning it on here enables it there again | Off |
+| Show / hide hotkey | Shows or hides the buddies from anywhere. Click the box and press the keys: at least one of Ctrl, Alt or Win (Shift can be added), plus a letter, a digit, F1–F24 or Space. **None** turns it off. If another app or Windows already uses the combination, a message says so: pick another | `Ctrl+Alt+B` |
 
 **Claude Code hooks:** a status panel that says whether the hooks are installed, when the last hook event arrived, and which Claude Code settings file is used. Press **Refresh** to check again. Installing, repairing and removing the hooks is done from the tray menu.
 
@@ -209,7 +214,7 @@ No. It only observes. It never sends input to a session or approves anything for
 
 1. Uninstall it from **Settings → Apps → Installed apps** (Windows 11) or **Apps & features** (Windows 10).
 2. The uninstaller asks whether to also remove Claude Buddy's hooks from your Claude Code settings. Answer **Yes**: it removes only Claude Buddy's entries and keeps a backup. If you keep them, Claude Code reports a hook error in every session, because the hook program is gone. (You can also remove them beforehand with tray menu → **Uninstall hooks…**.)
-3. Tick **Delete the application data** to also remove your Claude Buddy settings (`%APPDATA%\claude-buddy\`).
+3. Tick **Delete the application data** to also remove your Claude Buddy settings (`%APPDATA%\claude-buddy\`). The uninstaller always removes the **Start with Windows** entry.
 4. Optional: delete the `settings.json.claude-buddy-backup-*` files next to your Claude Code settings.
 
 ### How heavy is it?

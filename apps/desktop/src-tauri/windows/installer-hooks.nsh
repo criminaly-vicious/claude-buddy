@@ -17,6 +17,14 @@
 !macroend
 
 !macro NSIS_HOOK_POSTUNINSTALL
+  ; "Start with Windows" (src-tauri/src/win/autostart.rs): the `Run` value and
+  ; the enabled/disabled flag Task Manager keeps under `StartupApproved\Run`.
+  ; Tauri's template removes the first too; both are kept on updates.
+  ${If} $UpdateMode <> 1
+    DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "Claude Buddy"
+    DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run" "Claude Buddy"
+  ${EndIf}
+
   ; "Delete the application data" also removes our own folder
   ; (bridge.json, config.json), which is not under the bundle identifier.
   ${If} $DeleteAppDataCheckboxState = 1
