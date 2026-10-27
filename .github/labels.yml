@@ -1,0 +1,17 @@
+# Label definitions for a label-sync action.
+- {name: "type:feature", color: "1d76db", description: "New capability or improvement"}
+- {name: "type:bug", color: "d73a4a", description: "Something is broken"}
+- {name: "type:docs", color: "0075ca", description: "Documentation"}
+- {name: "type:chore", color: "cfd3d7", description: "Maintenance, tooling, CI, dependencies"}
+- {name: "type:spike", color: "fbca04", description: "Time-boxed research"}
+- {name: "type:epic", color: "5319e7", description: "Large goal split into issues"}
+- {name: "area:core", color: "ff8c42", description: "Rust core, session state"}
+- {name: "area:bridge", color: "f9a15c", description: "Hooks, local server, transcript watcher"}
+- {name: "area:ui", color: "c2e0c6", description: "Frontend, windows, tray UI"}
+- {name: "area:anim", color: "f4b183", description: "Pixel-art sprites and animation"}
+- {name: "area:win", color: "bfd4f2", description: "Windows-specific integration"}
+- {name: "area:ci", color: "d4c5f9", description: "CI, release, repo tooling"}
+- {name: "area:docs", color: "0e8a16", description: "Documentation and planning"}
+- {name: "priority:p0", color: "b60205", description: "Critical, do now"}
+- {name: "priority:p1", color: "e99695", description: "Important, next up"}
+- {name: "priority:p2", color: "f9d0c4", description: "Nice to have"}

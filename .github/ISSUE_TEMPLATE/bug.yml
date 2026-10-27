@@ -1,0 +1,52 @@
+name: Bug report
+description: Something is broken or behaves unexpectedly
+title: "fix: "
+labels: ["type:bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: "1. ...\n2. ..."
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Claude Buddy version
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Windows version
+      placeholder: Windows 11 23H2
+    validations:
+      required: true
+  - type: input
+    id: claude-code
+    attributes:
+      label: Claude Code CLI version
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options: [core, bridge, ui, anim, win, unknown]
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / screenshots
+      description: Remove tokens and personal data first.
+      render: shell
