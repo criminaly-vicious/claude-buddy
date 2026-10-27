@@ -15,3 +15,4 @@
 - {name: "priority:p0", color: "b60205", description: "Critical, do now"}
 - {name: "priority:p1", color: "e99695", description: "Important, next up"}
 - {name: "priority:p2", color: "f9d0c4", description: "Nice to have"}
+- {name: "perf", color: "fef2c0", description: "Run the performance budget check on this PR"}
