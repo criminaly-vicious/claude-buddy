@@ -13,6 +13,7 @@ Primary source: **Claude Code hooks** configured in `~/.claude/settings.json`, w
 - **Transcripts only:** zero setup, but cannot reliably detect "waiting for permission" and lags.
 - **Process/terminal scraping:** fragile, invasive, terminal-specific.
 - **Wrapping the `claude` command:** changes how users start sessions; rejected.
+- **Built-in `http` hooks instead of `buddy-hook.exe`** (evaluated in spike #9): rejected. Every hook shows an error in the user's transcript when the app is not running, `SessionStart` does not support `http`, and the payload has no PID. See `docs/session-detection.md`.
 
 ## Consequences
 - Requires a one-click, reversible hook installer that must never damage user config.
