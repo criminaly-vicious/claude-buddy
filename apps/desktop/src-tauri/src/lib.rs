@@ -5,12 +5,14 @@ pub mod claude_dir;
 pub mod installer;
 pub mod liveness;
 pub mod registry;
+mod single_instance;
+pub mod tray;
 pub mod watcher;
 pub mod win;
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
-use tauri::{Emitter, Manager, RunEvent, WindowEvent};
+use tauri::{AppHandle, Emitter, Manager, RunEvent, WindowEvent};
 
 use bridge::Bridge;
 use registry::{Change, Registry, EVENT_REMOVE, EVENT_SNAPSHOT, EVENT_UPDATE};
@@ -38,25 +40,6 @@ fn focus_session(registry: tauri::State<'_, SharedRegistry>, id: String) -> bool
     pid.is_some_and(win::focus_process)
 }
 
-/// Dev-only dry run of the hook installer: the diff it would apply to
-/// `settings.json`, with `buddy-hook` expected next to the app executable.
-/// The real install action comes with the tray menu (#27).
-#[cfg(debug_assertions)]
-#[tauri::command]
-fn debug_hook_install_plan() -> Result<String, String> {
-    let settings = installer::default_settings_path().ok_or("no Claude config folder")?;
-    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    let hook = exe.with_file_name(if cfg!(windows) {
-        "buddy-hook.exe"
-    } else {
-        "buddy-hook"
-    });
-    let plan = installer::HookInstaller::new(settings, hook)
-        .plan_install()
-        .map_err(|e| e.to_string())?;
-    Ok(plan.diff())
-}
-
 /// Fallback source for sessions without hooks. Missing `~/.claude/projects`
 /// (Claude Code never ran) just means no fallback.
 fn start_transcript_watcher(app: &tauri::App, inputs: std::sync::mpsc::Sender<bridge::Input>) {
@@ -75,6 +58,18 @@ fn start_transcript_watcher(app: &tauri::App, inputs: std::sync::mpsc::Sender<br
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // A second launch shows the first instance's buddies and exits.
+    let app_handle: Arc<OnceLock<AppHandle>> = Arc::default();
+    let first = Arc::clone(&app_handle);
+    let claim = single_instance::claim(move || {
+        if let Some(app) = first.get() {
+            tray::set_buddies_visible(app, true);
+        }
+    });
+    if let single_instance::Instance::Second = claim {
+        return;
+    }
+
     let registry: SharedRegistry = Arc::default();
     let builder = tauri::Builder::default()
         .manage(Arc::clone(&registry))
@@ -83,6 +78,8 @@ pub fn run() {
         .setup(move |app| {
             let overlay = Overlay::setup(app)?;
             app.manage(overlay);
+            tray::setup(app)?;
+            let _ = app_handle.set(app.handle().clone());
 
             let handle = app.handle().clone();
             let emit = move |change: Change| {
@@ -112,19 +109,6 @@ pub fn run() {
             }
         });
 
-    #[cfg(debug_assertions)]
-    let builder = builder.invoke_handler(tauri::generate_handler![
-        win::set_hit_regions,
-        win::overlay_expand,
-        win::overlay_restore,
-        win::set_overlay_content_size,
-        win::get_overlay_anchor,
-        win::set_overlay_anchor,
-        get_sessions,
-        focus_session,
-        debug_hook_install_plan
-    ]);
-    #[cfg(not(debug_assertions))]
     let builder = builder.invoke_handler(tauri::generate_handler![
         win::set_hit_regions,
         win::overlay_expand,

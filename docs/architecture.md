@@ -37,7 +37,7 @@
 | Hook Installer | Rust | Adds/removes our hook entries in `~/.claude/settings.json` with backup and key-preserving merge. |
 | Overlay | TypeScript, Canvas 2D | Transparent, frameless, always-on-top, click-through window covering the chosen corner. Draws buddies from sprite sheets, runs physics, shows hover card. |
 | Win Integration | Rust (`windows-sys`), `src-tauri/src/win/` | Overlay window: corner anchoring on the chosen monitor's work area, DPI and display changes, click-through except over regions registered with `set_hit_regions` ([ADR-0011](../.context/decisions/0011-overlay-click-through.md)), expand to the work area for throws, focus the terminal window owning a session PID. Later: autostart, global hotkey. |
-| Tray & Settings | Tauri tray + small settings window | Show/hide, install hooks, settings, quit. |
+| Tray & Settings | Tauri tray (`src-tauri/src/tray/`) + small settings window (#28) | Show/hide buddies (hidden: window hidden, nothing rendered), install/repair and uninstall hooks with a confirmation and a bridge health check, settings, quit. One instance per Windows session; a second launch shows the first one's buddies ([ADR-0012](../.context/decisions/0012-tray-dialogs-and-single-instance.md)). |
 
 ## Data model
 

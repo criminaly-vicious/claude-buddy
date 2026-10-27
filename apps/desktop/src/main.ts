@@ -13,6 +13,7 @@ import {
   HitRegion,
   onOverlayAnchor,
   onOverlayPointer,
+  onOverlayVisible,
   restoreOverlay,
   setHitRegions,
   setOverlayContentSize,
@@ -100,9 +101,12 @@ async function start(): Promise<void> {
   let cardRect: Rect | null = null;
   let sprites: { id: string; x: number; y: number; size: number }[] = [];
 
+  /** Hidden from the tray: nothing is drawn and the loop sleeps. */
+  let hiddenByUser = false;
+
   const loop = new RenderLoop((now) => {
     // Hidden overlay: draw nothing and sleep until it is shown again.
-    if (document.hidden) return null;
+    if (document.hidden || hiddenByUser) return null;
     const vp = viewport();
     const dpr = vp.devicePixelRatio;
     const frame = scene.render(now, vp);
@@ -253,6 +257,14 @@ async function start(): Promise<void> {
   if (inTauri) {
     await onOverlayPointer((inside) => {
       if (!inside) pointerGone();
+    });
+    await onOverlayVisible((visible) => {
+      hiddenByUser = !visible;
+      if (!visible) {
+        hover.pointer(null, performance.now());
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+      }
+      loop.invalidate();
     });
     scene.setCorner((await getOverlayAnchor()).corner);
     await onOverlayAnchor((anchor) => {

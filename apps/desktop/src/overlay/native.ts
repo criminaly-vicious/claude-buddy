@@ -89,3 +89,8 @@ export function onOverlayAnchor(handler: (anchor: Anchor) => void): Promise<() =
 export function onOverlayPointer(handler: (inside: boolean) => void): Promise<() => void> {
   return listen<boolean>("overlay:pointer", (event) => handler(event.payload));
 }
+
+/** Calls `handler` when the buddies are hidden (`false`) or shown (`true`) from the tray. */
+export function onOverlayVisible(handler: (visible: boolean) => void): Promise<() => void> {
+  return listen<boolean>("overlay:visible", (event) => handler(event.payload));
+}

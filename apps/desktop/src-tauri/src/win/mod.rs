@@ -32,6 +32,9 @@ pub const EVENT_ANCHOR: &str = "overlay:anchor";
 /// `false` when it leaves them all. Once click-through, the page itself no
 /// longer sees the mouse, so this is how it learns the pointer left.
 pub const EVENT_POINTER: &str = "overlay:pointer";
+/// Event carrying `false` when the buddies are hidden from the tray and
+/// `true` when shown again. Hidden, the page draws nothing at all.
+pub const EVENT_VISIBLE: &str = "overlay:visible";
 /// Gap between the overlay and the work-area edges, in logical pixels.
 const MARGIN: f64 = 8.0;
 
@@ -60,6 +63,7 @@ pub struct Overlay {
     /// Logical size the buddies need, from the frontend's layout (#21).
     content_size: Mutex<(f64, f64)>,
     expanded: AtomicBool,
+    visible: AtomicBool,
     tester: &'static Mutex<HitTester>,
 }
 
@@ -96,6 +100,7 @@ impl Overlay {
             anchor: Mutex::new(Anchor::default()),
             content_size: Mutex::new(DEFAULT_SIZE),
             expanded: AtomicBool::new(false),
+            visible: AtomicBool::new(true),
             tester,
         });
         overlay.place()?;
@@ -154,6 +159,24 @@ impl Overlay {
     pub fn restore(&self) -> tauri::Result<()> {
         self.expanded.store(false, Ordering::SeqCst);
         self.place().map(|_| ())
+    }
+
+    pub fn visible(&self) -> bool {
+        self.visible.load(Ordering::SeqCst)
+    }
+
+    /// Hides or shows the buddies (tray). Hidden, the window is gone and
+    /// the page stops rendering; shown, it is re-anchored first.
+    pub fn set_visible(&self, visible: bool) -> tauri::Result<()> {
+        self.visible.store(visible, Ordering::SeqCst);
+        if visible {
+            self.place()?;
+            self.window.show()?;
+            set_click_through(&self.window, true);
+        } else {
+            self.window.hide()?;
+        }
+        self.window.emit(EVENT_VISIBLE, visible)
     }
 
     pub fn set_hit_regions(&self, regions: Vec<LogicalRect>) {
