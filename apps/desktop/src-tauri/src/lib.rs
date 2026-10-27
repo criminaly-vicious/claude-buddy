@@ -28,6 +28,25 @@ fn debug_sessions(registry: tauri::State<'_, SharedRegistry>) -> Vec<registry::S
         .unwrap_or_default()
 }
 
+/// Dev-only dry run of the hook installer: the diff it would apply to
+/// `settings.json`, with `buddy-hook` expected next to the app executable.
+/// The real install action comes with the tray menu (#27).
+#[cfg(debug_assertions)]
+#[tauri::command]
+fn debug_hook_install_plan() -> Result<String, String> {
+    let settings = installer::default_settings_path().ok_or("no Claude config folder")?;
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let hook = exe.with_file_name(if cfg!(windows) {
+        "buddy-hook.exe"
+    } else {
+        "buddy-hook"
+    });
+    let plan = installer::HookInstaller::new(settings, hook)
+        .plan_install()
+        .map_err(|e| e.to_string())?;
+    Ok(plan.diff())
+}
+
 /// Fallback source for sessions without hooks. Missing `~/.claude/projects`
 /// (Claude Code never ran) just means no fallback.
 fn start_transcript_watcher(app: &tauri::App, inputs: std::sync::mpsc::Sender<bridge::Input>) {
@@ -73,7 +92,10 @@ pub fn run() {
         });
 
     #[cfg(debug_assertions)]
-    let builder = builder.invoke_handler(tauri::generate_handler![debug_sessions]);
+    let builder = builder.invoke_handler(tauri::generate_handler![
+        debug_sessions,
+        debug_hook_install_plan
+    ]);
 
     builder
         .build(tauri::generate_context!())
