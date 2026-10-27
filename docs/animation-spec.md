@@ -74,7 +74,18 @@ Implemented in `apps/desktop/src/overlay/layout.ts` and `scene.ts`:
 | Release without velocity | Drops, `land`, walks back |
 | Right-click | Context menu: Focus, Copy session id, Hide this buddy |
 
-While a buddy is in the air the overlay temporarily grows to full screen and shrinks back after landing.
+While a buddy is held or in the air the overlay temporarily grows to the monitor's work area and shrinks back once it is in its slot again.
+
+### Drag and throw
+
+Implemented in `apps/desktop/src/overlay/throw.ts` (physics and phases, pure), `scene.ts` and `expand.ts`:
+- **Click or drag:** a press on a buddy that moves more than 4 CSS px is a drag; one that stays put is a click (focus, see above). Drags only start on a buddy's hit region.
+- **Held:** `grabbed` loops; the buddy hangs from the point where it was caught and follows the pointer on a critically damped spring (stiffness 600/s²), so it lags a little without wobbling.
+- **Thrown:** on release it keeps the spring's velocity (capped at 4000 px/s) and plays `fly`: gravity 2000 px/s², bounces off the work-area edges with restitution 0.4, and on the floor a bounce slower than 60 px/s settles and friction (1600 px/s²) slides it to a stop. A release without velocity just drops.
+- **Landing:** `land`, or `land_splat` then `dizzy` when the first floor impact was at least 1400 px/s (a fall of about 490 px). Then it plays `walk` in a straight line back to its slot at the normal walking speed, following the slot if it moves meanwhile, and goes back to its session's animation, which kept running underneath.
+- **Physics:** fixed 120 Hz steps on a grid that starts at the grab, in CSS px relative to the group's corner area, separate from drawing. The path depends only on the input timestamps, not on the redraw rate. The render loop runs at frame rate only while someone is held, flying or walking back, and sleeps again after.
+- **Window:** on the first drag the backend expands the overlay to the work area (`overlay_expand` returns where the corner area sits inside it), so the group stays put on screen while the window grows; it is drawn in that area whenever the canvas has the expanded size. Everything outside the buddies stays click-through. When the last buddy is back in its slot, `overlay_restore` shrinks the window again. Until the expansion lands, a throw stays inside the corner area.
+- A buddy can be caught again in mid-air. The hover card does not open on a thrown buddy.
 
 ## Hover card content rules
 
