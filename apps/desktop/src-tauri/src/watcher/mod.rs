@@ -27,17 +27,9 @@ const STARTUP_MAX_AGE: Duration = Duration::from_secs(30 * 60);
 /// writes costs one read.
 const DEBOUNCE: Duration = Duration::from_millis(150);
 
-/// `<config>/projects`: `CLAUDE_CONFIG_DIR`, else `~/.claude` (Windows: `%USERPROFILE%\.claude`).
+/// `<config>/projects`, see [`crate::claude_dir::config_dir`].
 pub fn projects_dir() -> Option<PathBuf> {
-    let non_empty = |name: &str| std::env::var_os(name).filter(|v| !v.is_empty());
-    let config = match non_empty("CLAUDE_CONFIG_DIR") {
-        Some(dir) => PathBuf::from(dir),
-        None => {
-            let home = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
-            PathBuf::from(non_empty(home)?).join(".claude")
-        }
-    };
-    Some(config.join("projects"))
+    Some(crate::claude_dir::config_dir()?.join("projects"))
 }
 
 /// A running watcher. Dropping it stops the file watch, which closes the

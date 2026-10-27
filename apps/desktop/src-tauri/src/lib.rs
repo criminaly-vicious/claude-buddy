@@ -2,6 +2,7 @@
 //! own issues (see docs/backlog.md).
 
 pub mod bridge;
+pub mod claude_dir;
 pub mod liveness;
 pub mod registry;
 pub mod watcher;
