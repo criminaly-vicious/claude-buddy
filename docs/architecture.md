@@ -30,8 +30,8 @@
 
 | Component | Language | Responsibility |
 | --- | --- | --- |
-| `buddy-hook` | Rust (tiny CLI, < 1 MB) | Invoked by Claude Code hooks. Reads hook JSON from stdin, adds `ppid`/process info, POSTs to the bridge. Exits 0 in < 50 ms and **never** blocks or fails the Claude session (fire-and-forget, short timeout). |
-| Bridge | Rust (`axum` or `tiny_http`) | Local HTTP server bound to `127.0.0.1` on a random free port. Port + token written to `%APPDATA%\claude-buddy\bridge.json`. Validates and normalises events. |
+| `buddy-hook` | Rust (tiny CLI, < 1 MB) | Invoked by Claude Code hooks. Reads hook JSON from stdin, sanitises it, adds `CLAUDE_PID`, POSTs it to the bridge ([protocol](#bridge-protocol)). Exits 0 in < 50 ms and **never** blocks or fails the Claude session (fire-and-forget, short timeout). |
+| Bridge | Rust (`axum` or `tiny_http`) | Local HTTP server bound to `127.0.0.1` on a random free port. Port + token written to `bridge.json` ([protocol](#bridge-protocol)). Validates events and normalises them into registry events. |
 | Transcript Watcher | Rust (`notify`) | Watches `~/.claude/projects/**.jsonl`. Tails new lines, infers state when hooks are missing. Debounced. |
 | Session Registry | Rust | Single source of truth. Merges both sources, runs the [state machine](session-detection.md#state-machine), expires dead sessions, emits diffs to the UI. |
 | Hook Installer | Rust | Adds/removes our hook entries in `~/.claude/settings.json` with backup and key-preserving merge. |
@@ -60,6 +60,138 @@ interface SessionView {
 ```
 
 UI receives the full list on start (`sessions:snapshot`) then diffs (`sessions:update`, `sessions:remove`).
+
+## Bridge protocol
+
+Contract between `buddy-hook` (client, #11) and the bridge (server, #12). Protocol version **1**. Decision record: [ADR-0003](../.context/decisions/0003-loopback-http-bridge.md).
+
+### Discovery file: `bridge.json`
+
+| OS | Path |
+| --- | --- |
+| Windows | `%APPDATA%\claude-buddy\bridge.json` (`%APPDATA%` is the roaming profile folder, e.g. `C:\Users\<user>\AppData\Roaming`) |
+| Linux / macOS (development only) | `$XDG_CONFIG_HOME/claude-buddy/bridge.json`, or `~/.config/claude-buddy/bridge.json` when `XDG_CONFIG_HOME` is unset |
+
+- The path is fixed and computed from environment variables only, so `buddy-hook` finds it without Tauri. It is deliberately **not** the Tauri app data dir (which follows the app identifier).
+- `CLAUDE_BUDDY_BRIDGE_FILE`, if set, overrides the path on both sides. It is meant for tests and should not be set by users.
+
+```json
+{
+  "protocol": 1,
+  "port": 51234,
+  "token": "9f2c…64 hex chars…",
+  "pid": 7312,
+  "started_at": 1793072400000
+}
+```
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `protocol` | integer | Protocol version. `buddy-hook` sends nothing if it is not a version it supports |
+| `port` | integer | Port on `127.0.0.1` |
+| `token` | string | 64 lowercase hex chars (32 random bytes from the OS CSPRNG), new on every app start |
+| `pid` | integer | PID of the Claude Buddy process. Lets a client tell a stale file from a live app |
+| `started_at` | integer | Epoch milliseconds when the app wrote the file |
+
+Lifecycle:
+- The app writes the file at startup, after the server is listening. It writes to a temporary file in the same folder, then renames it into place, so a reader never sees a half-written file.
+- The file is readable by the current user only. On Windows its ACL grants access to the current user's SID only, with no inherited entries. On Unix the mode is `0600`.
+- The app deletes the file on a clean exit. After a crash a stale file can remain. Clients need no special handling: the connection is refused, or the token is rejected by the next app instance, and the event is dropped.
+- A missing, unreadable or invalid file means "Buddy is not running": `buddy-hook` drops the event.
+
+### Endpoint: `POST /v1/events`
+
+```
+POST /v1/events HTTP/1.1
+Host: 127.0.0.1:51234
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+Body: one event as a JSON object. Field names use the hook payload's own `snake_case`. Unknown fields are ignored, so new fields can be added without a version bump.
+
+```json
+{
+  "v": 1,
+  "event": "PreToolUse",
+  "session_id": "11111111-1111-4111-8111-111111111111",
+  "cwd": "C:\\Users\\me\\projects\\demo",
+  "at": 1793072412345,
+  "claude_pid": 9184,
+  "tool_name": "Read",
+  "target": "index.ts"
+}
+```
+
+| Field | Type | Required | Limit | Content |
+| --- | --- | --- | --- | --- |
+| `v` | integer | yes | | Protocol version, `1` |
+| `event` | string | yes | 32 chars | Hook event name exactly as Claude Code sends it in `hook_event_name` |
+| `session_id` | string | yes | 64 chars | Hook `session_id` |
+| `cwd` | string | yes | 1024 chars | Hook `cwd`, unchanged (Windows separators kept) |
+| `at` | integer | yes | | Epoch milliseconds when `buddy-hook` started |
+| `claude_pid` | integer | no | | `CLAUDE_PID` from the hook environment, if set and numeric |
+| `tool_name` | string | tool events, `PermissionRequest` | 128 chars | Hook `tool_name` |
+| `target` | string | no | 60 chars | Sanitised short target, see below |
+| `notification_type` | string | `Notification` | 32 chars | Hook `notification_type` |
+| `start_source` | string | `SessionStart` | 16 chars | Hook `source` (`startup`, `resume`, `clear`, `compact`, `fork`) |
+| `agent_id` | string | no | 64 chars | Hook `agent_id` when the event comes from a subagent |
+
+The whole body must be at most **16 KiB**. Strings are counted in Unicode scalar values. A client cuts any string over its limit before sending. The server rejects a request whose field exceeds its limit.
+
+**Never sent:** `prompt`, `tool_input` (except the `target` derived from it), `tool_response`, `last_assistant_message`, `message`, `title`, `transcript_path`, file contents, full commands, environment variables.
+
+#### `target` rules
+
+`buddy-hook` derives `target` from `tool_input` before sending, then cuts it to 60 chars. Any tool not listed sends no `target`.
+
+| Tool | `target` |
+| --- | --- |
+| `Read`, `Edit`, `MultiEdit`, `Write`, `NotebookEdit` | File name only (last segment of `file_path` / `notebook_path`, either separator) |
+| `Grep`, `Glob` | `pattern` |
+| `WebSearch` | `query` |
+| `WebFetch` | Host of `url` only (no path, no query string) |
+| `Bash`, `PowerShell` | Program name only: first whitespace-separated word of `command`, last path segment (`git`, `cargo`) |
+| `Agent`, `Task` | `subagent_type` |
+
+#### Responses
+
+`buddy-hook` ignores the response body and status, and never retries. Codes exist for tests and debugging.
+
+| Status | When |
+| --- | --- |
+| `204 No Content` | Event accepted (including recognised events the MVP ignores, e.g. `SubagentStart`) |
+| `202 Accepted` | Valid body with an `event` name the server does not know. Ignored, for forward compatibility |
+| `400 Bad Request` | Invalid JSON, missing required field, wrong type, or a field over its limit |
+| `401 Unauthorized` | Missing or wrong bearer token (compared in constant time) |
+| `404 Not Found` / `405 Method Not Allowed` | Other paths or methods |
+| `413 Payload Too Large` | Body over 16 KiB (checked from `Content-Length` and while reading) |
+| `415 Unsupported Media Type` | `Content-Type` is not `application/json` |
+
+`GET /v1/health` (same token) returns `200` with `{"protocol":1}`. The hook installer's "Test" button uses it.
+
+#### Client timing
+
+`buddy-hook` sends with a 300 ms total timeout (connect + write + read), does not wait for the body, and exits 0 silently in every case (see [rules](session-detection.md#rules-for-buddy-hook)).
+
+### Server: event → registry
+
+The bridge stamps each event with its own receive time and applies events in arrival order. Async hooks can arrive slightly out of order; the registry's minimum display time absorbs this.
+
+| `event` | Registry event |
+| --- | --- |
+| `SessionStart` | `SessionStarted` |
+| `UserPromptSubmit` | `PromptSubmitted` |
+| `PreToolUse` | `ToolStarted { tool: tool_name, summary }`, where `summary` is `"<tool_name> · <target>"` or just `tool_name` |
+| `PostToolUse`, `PostToolUseFailure` | `ToolFinished { tool: tool_name }` |
+| `Notification` with `notification_type` in `permission_prompt`, `idle_prompt`, `elicitation_dialog`, `elicitation_url_dialog`, `agent_needs_input` | `NeedsInput` |
+| `Notification` with another type | Ignored (`204`) |
+| `PermissionRequest` | `NeedsInput` |
+| `Stop` | `TurnEnded` |
+| `SubagentStart`, `SubagentStop` | Ignored for the MVP (`204`) |
+| `SessionEnd` | `SessionEnded` |
+
+`claude_pid` becomes the registry's `pid`; `cwd` is passed through. Events inside a subagent (`agent_id` set) count toward the parent session.
 
 ## Tech stack
 
@@ -99,5 +231,5 @@ docs/                    human docs
 ## Security
 
 - Bridge listens on loopback only and requires the token from `bridge.json` (file readable only by the user).
-- `buddy-hook` sends only: event name, session_id, cwd, tool_name, a sanitised short target (file name, search query truncated), timestamps, pid. Never full tool input/output or prompts.
+- `buddy-hook` sends only the fields in the [bridge protocol](#bridge-protocol): event name, session_id, cwd, tool_name, a sanitised short target, a timestamp and the Claude PID. Never full tool input/output or prompts.
 - No network access beyond loopback. No telemetry.
