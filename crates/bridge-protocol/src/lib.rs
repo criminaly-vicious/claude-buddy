@@ -231,9 +231,12 @@ pub fn resolve_bridge_file_path(
     let base = if windows {
         PathBuf::from(non_empty("APPDATA")?)
     } else {
-        match non_empty("XDG_CONFIG_HOME").map(PathBuf::from) {
-            Some(dir) if dir.is_absolute() => dir,
-            _ => PathBuf::from(non_empty("HOME")?).join(".config"),
+        // Unix rules on purpose (not the host's `Path::is_absolute`), so the
+        // result does not depend on which OS runs the resolver.
+        let xdg = non_empty("XDG_CONFIG_HOME").filter(|dir| dir.to_string_lossy().starts_with('/'));
+        match xdg {
+            Some(dir) => PathBuf::from(dir),
+            None => PathBuf::from(non_empty("HOME")?).join(".config"),
         }
     };
     Some(base.join("claude-buddy").join("bridge.json"))
