@@ -1,0 +1,30 @@
+{
+  "model": "sonnet",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/user/bin/audit-bash.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "notify-send 'Claude finished'"
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": []
+  }
+}
