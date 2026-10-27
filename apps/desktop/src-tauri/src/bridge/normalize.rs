@@ -2,7 +2,7 @@
 
 use bridge_protocol::EventBody;
 
-use crate::registry::{EventKind, Millis, RegistryEvent, Source};
+use crate::registry::{tool_summary, EventKind, Millis, RegistryEvent, Source};
 
 /// Notification types that mean the user is needed.
 const WAITING_NOTIFICATIONS: &[&str] = &[
@@ -21,10 +21,7 @@ pub fn to_registry_event(body: EventBody, received_at: Millis) -> Option<Registr
         "SessionStart" => EventKind::SessionStarted,
         "UserPromptSubmit" => EventKind::PromptSubmitted,
         "PreToolUse" => EventKind::ToolStarted {
-            summary: Some(match &body.target {
-                Some(target) => format!("{} · {target}", tool()),
-                None => tool(),
-            }),
+            summary: Some(tool_summary(&tool(), body.target.as_deref())),
             tool: tool(),
         },
         "PostToolUse" | "PostToolUseFailure" => EventKind::ToolFinished { tool: tool() },

@@ -397,6 +397,14 @@ impl Session {
     }
 }
 
+/// Hover-card line for a tool call: `"Read · index.ts"`, or just the tool.
+pub fn tool_summary(tool: &str, target: Option<&str>) -> String {
+    match target {
+        Some(target) => format!("{tool} · {target}"),
+        None => tool.to_string(),
+    }
+}
+
 /// Last path segment of `cwd`, accepting both `/` and `\` separators.
 fn project_name(cwd: &str) -> String {
     cwd.rsplit(['/', '\\'])
