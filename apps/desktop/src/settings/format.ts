@@ -20,6 +20,36 @@ export function monitorLabel(monitor: MonitorInfo): string {
   return `${monitor.index + 1}: ${name}, ${monitor.width}×${monitor.height}${primary}`;
 }
 
+/** The key part of a `KeyboardEvent`, as the hotkey text expects it. */
+export interface KeyPress {
+  ctrlKey: boolean;
+  altKey: boolean;
+  shiftKey: boolean;
+  metaKey: boolean;
+  /** `KeyboardEvent.code`: layout-independent, e.g. "KeyB", "Digit7", "F9". */
+  code: string;
+}
+
+/**
+ * The hotkey text for a key press ("Ctrl+Alt+B"), or `null` while only
+ * modifiers are down or for a key the backend does not accept.
+ */
+export function hotkeyFromPress(press: KeyPress): string | null {
+  const key =
+    /^Key([A-Z])$/.exec(press.code)?.[1] ??
+    /^Digit([0-9])$/.exec(press.code)?.[1] ??
+    (/^F([1-9]|1[0-9]|2[0-4])$/.test(press.code) ? press.code : null) ??
+    (press.code === "Space" ? "Space" : null);
+  if (!key) return null;
+  const parts = [
+    press.ctrlKey && "Ctrl",
+    press.altKey && "Alt",
+    press.shiftKey && "Shift",
+    press.metaKey && "Win",
+  ].filter((p): p is string => Boolean(p));
+  return [...parts, key].join("+");
+}
+
 /** The hook status line and whether it needs attention. */
 export function hookStatusText(status: HookStatus): { text: string; ok: boolean } {
   if (!status.bridgeRunning) {

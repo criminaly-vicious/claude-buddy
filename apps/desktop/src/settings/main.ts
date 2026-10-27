@@ -10,12 +10,14 @@ import {
   getConfig,
   hookStatus,
   HookStatus,
+  integrationStatus,
+  IntegrationStatus,
   listMonitors,
   MonitorInfo,
   setConfig,
 } from "../config";
 import type { Corner } from "../overlay/native";
-import { hookStatusText, lastEventText, monitorLabel } from "./format";
+import { hookStatusText, hotkeyFromPress, lastEventText, monitorLabel } from "./format";
 
 const inTauri = "__TAURI_INTERNALS__" in window;
 
@@ -24,6 +26,8 @@ const corner = $<HTMLSelectElement>("corner");
 const monitor = $<HTMLSelectElement>("monitor");
 const idle = $<HTMLInputElement>("idle");
 const reduceMotion = $<HTMLInputElement>("reduce-motion");
+const autostart = $<HTMLInputElement>("autostart");
+const hotkey = $<HTMLInputElement>("hotkey");
 const scales = [...document.querySelectorAll<HTMLInputElement>('input[name="scale"]')];
 const error = $<HTMLParagraphElement>("error");
 
@@ -36,6 +40,8 @@ function show(config: AppConfig): void {
   for (const radio of scales) radio.checked = Number(radio.value) === config.scale;
   idle.value = String(config.idleSleepMinutes);
   reduceMotion.checked = config.reduceMotion;
+  autostart.checked = config.startWithWindows;
+  hotkey.value = config.hotkey ?? "";
 }
 
 function fromForm(): AppConfig {
@@ -47,7 +53,27 @@ function fromForm(): AppConfig {
     scale: Number(scale),
     idleSleepMinutes: Math.round(Number(idle.value)) || current.idleSleepMinutes,
     reduceMotion: reduceMotion.checked,
+    startWithWindows: autostart.checked,
+    hotkey: hotkey.value === "" ? null : hotkey.value,
   };
+}
+
+/** Shows `text` in the error line `id`, or hides it. */
+function problem(id: string, text: string | null): void {
+  const line = $<HTMLParagraphElement>(id);
+  line.textContent = text ?? "";
+  line.hidden = text === null;
+}
+
+function showIntegrations(status: IntegrationStatus): void {
+  autostart.disabled = status.autostart === null;
+  if (status.autostart !== null) autostart.checked = status.autostart;
+  problem("autostart-error", status.autostartError);
+  problem("hotkey-error", status.hotkeyError);
+}
+
+async function refreshIntegrations(): Promise<void> {
+  if (inTauri) showIntegrations(await integrationStatus());
 }
 
 async function save(): Promise<void> {
@@ -55,6 +81,7 @@ async function save(): Promise<void> {
   try {
     show(inTauri ? await setConfig(wanted) : wanted);
     error.hidden = true;
+    await refreshIntegrations();
   } catch (e) {
     error.textContent = String(e);
     error.hidden = false;
@@ -97,14 +124,31 @@ async function start(): Promise<void> {
   } else {
     show(DEFAULT_CONFIG);
   }
-  for (const input of [corner, monitor, reduceMotion, ...scales]) {
+  for (const input of [corner, monitor, reduceMotion, autostart, ...scales]) {
     input.addEventListener("change", () => void save());
   }
   idle.addEventListener("change", () => void save());
+  // The hotkey box records the next key press instead of typing.
+  hotkey.addEventListener("keydown", (event) => {
+    if (event.key === "Tab") return;
+    event.preventDefault();
+    const text = hotkeyFromPress(event);
+    if (text && text !== hotkey.value) {
+      hotkey.value = text;
+      void save();
+    }
+  });
+  $<HTMLButtonElement>("hotkey-clear").addEventListener("click", () => {
+    hotkey.value = "";
+    void save();
+  });
   $<HTMLButtonElement>("refresh").addEventListener("click", () => void refreshHooks());
   // Coming back to the window is the natural moment to look again; no timer.
-  window.addEventListener("focus", () => void refreshHooks());
-  await refreshHooks();
+  window.addEventListener("focus", () => {
+    void refreshHooks();
+    void refreshIntegrations(); // Task Manager may have changed autostart.
+  });
+  await Promise.all([refreshHooks(), refreshIntegrations()]);
 }
 
 start().catch((e) => {

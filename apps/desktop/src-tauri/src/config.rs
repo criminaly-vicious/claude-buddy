@@ -16,6 +16,8 @@ use crate::win::Corner;
 pub const VERSION: u32 = 1;
 /// Allowed buddy scales, CSS pixels per sprite pixel.
 pub const SCALES: [u32; 3] = [1, 2, 3];
+/// The show/hide hotkey until someone picks another one.
+pub const DEFAULT_HOTKEY: &str = "Ctrl+Alt+B";
 /// Idle → sleeping timeout bounds, minutes.
 pub const IDLE_MINUTES: (u32, u32) = (1, 120);
 
@@ -30,9 +32,9 @@ pub struct AppConfig {
     /// Minutes without events before an idle buddy falls asleep.
     pub idle_sleep_minutes: u32,
     pub reduce_motion: bool,
-    /// Stored only; autostart comes with #29.
+    /// Mirrors the real Run-key state (see `win::autostart`).
     pub start_with_windows: bool,
-    /// Stored only; the global hotkey comes with #29.
+    /// Global show/hide hotkey, e.g. "Ctrl+Alt+B"; `None` for none.
     pub hotkey: Option<String>,
 }
 
@@ -46,7 +48,7 @@ impl Default for AppConfig {
             idle_sleep_minutes: 5,
             reduce_motion: false,
             start_with_windows: false,
-            hotkey: None,
+            hotkey: Some(DEFAULT_HOTKEY.to_string()),
         }
     }
 }
@@ -84,7 +86,8 @@ impl AppConfig {
     }
 
     /// Values brought into range: nearest allowed scale, timeout clamped,
-    /// empty hotkey dropped, current version.
+    /// empty hotkey dropped, a valid hotkey spelled canonically ("Ctrl+Alt+B";
+    /// an invalid one is kept so the settings window can say why), current version.
     pub fn sanitized(mut self) -> Self {
         self.version = VERSION;
         self.scale = *SCALES
@@ -97,7 +100,11 @@ impl AppConfig {
         self.hotkey = self
             .hotkey
             .map(|h| h.trim().chars().take(64).collect::<String>())
-            .filter(|h| !h.is_empty());
+            .filter(|h| !h.is_empty())
+            .map(|h| match crate::win::hotkey::parse(&h) {
+                Ok(parsed) => crate::win::hotkey::format(parsed),
+                Err(_) => h,
+            });
         self
     }
 
@@ -206,6 +213,19 @@ mod tests {
         assert_eq!(config.scale, 3);
         assert_eq!(config.idle_sleep_minutes, 1);
         assert_eq!(config.hotkey, None);
+        let spelled = AppConfig::from_value(&json!({ "hotkey": " alt+ctrl+b " }));
+        assert_eq!(spelled.hotkey.as_deref(), Some("Ctrl+Alt+B"));
+        let kept = AppConfig::from_value(&json!({ "hotkey": "Hyper+Q" }));
+        assert_eq!(kept.hotkey.as_deref(), Some("Hyper+Q"));
+        // Missing means the default; null means no hotkey.
+        assert_eq!(
+            AppConfig::from_value(&json!({})).hotkey.as_deref(),
+            Some(DEFAULT_HOTKEY)
+        );
+        assert_eq!(
+            AppConfig::from_value(&json!({ "hotkey": null })).hotkey,
+            None
+        );
         assert_eq!(config.monitor, None);
         let long = AppConfig::from_value(&json!({ "idleSleepMinutes": 100000, "scale": 0 }));
         assert_eq!((long.idle_sleep_minutes, long.scale), (120, 1));

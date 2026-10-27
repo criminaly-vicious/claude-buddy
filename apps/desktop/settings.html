@@ -37,10 +37,16 @@
 
       <section>
         <h2>Startup</h2>
-        <label class="inline disabled"><input id="autostart" type="checkbox" disabled /> Start with Windows <em>(coming soon)</em></label>
-        <label class="disabled">Show / hide hotkey <em>(coming soon)</em>
-          <input id="hotkey" type="text" disabled placeholder="e.g. Ctrl+Alt+B" />
+        <label class="inline"><input id="autostart" type="checkbox" /> Start with Windows</label>
+        <p id="autostart-error" class="error" hidden></p>
+        <label>Show / hide hotkey
+          <span class="row">
+            <input id="hotkey" type="text" readonly placeholder="None" aria-describedby="hotkey-help" />
+            <button id="hotkey-clear" type="button">None</button>
+          </span>
         </label>
+        <p id="hotkey-help" class="detail">Click the box and press the keys, e.g. Ctrl+Alt+B.</p>
+        <p id="hotkey-error" class="error" hidden></p>
       </section>
 
       <section>

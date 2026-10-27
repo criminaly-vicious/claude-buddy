@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { hookStatusText, lastEventText, monitorLabel } from "./format";
+import { hookStatusText, hotkeyFromPress, lastEventText, monitorLabel } from "./format";
 
 describe("settings text", () => {
   it("describes the last hook event", () => {
@@ -28,5 +28,24 @@ describe("settings text", () => {
     expect(hookStatusText({ ...base, installed: false }).ok).toBe(false);
     expect(hookStatusText({ ...base, installed: null }).text).toContain("Could not read");
     expect(hookStatusText({ ...base, bridgeRunning: false }).text).toContain("not running");
+  });
+});
+
+describe("hotkey capture", () => {
+  const press = (code: string, mods: Partial<Record<"ctrlKey" | "altKey" | "shiftKey" | "metaKey", boolean>> = {}) =>
+    hotkeyFromPress({ ctrlKey: false, altKey: false, shiftKey: false, metaKey: false, code, ...mods });
+
+  it("spells presses the way the backend parses them", () => {
+    expect(press("KeyB", { ctrlKey: true, altKey: true })).toBe("Ctrl+Alt+B");
+    expect(press("Digit7", { metaKey: true, shiftKey: true })).toBe("Shift+Win+7");
+    expect(press("F9", { altKey: true })).toBe("Alt+F9");
+    expect(press("F24", { ctrlKey: true })).toBe("Ctrl+F24");
+    expect(press("Space", { ctrlKey: true })).toBe("Ctrl+Space");
+  });
+
+  it("waits while only modifiers are down and ignores unsupported keys", () => {
+    expect(press("ControlLeft", { ctrlKey: true })).toBeNull();
+    expect(press("Semicolon", { ctrlKey: true })).toBeNull();
+    expect(press("F25", { ctrlKey: true })).toBeNull();
   });
 });
