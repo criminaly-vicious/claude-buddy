@@ -41,6 +41,14 @@
 
 Animation playback is driven by an **animation controller** per buddy: target state comes from the registry; the controller plays the needed transition before the loop, and never interrupts a non-looping clip except for `grabbed`.
 
+Implemented in `apps/desktop/src/overlay/controller.ts`:
+- Posture decides the transition: `sit_down`, `work_type` and `research_read` leave the buddy sitting, everything else standing.
+- A new buddy always plays `spawn` first, even if it is first seen mid-turn.
+- A state that arrives during a non-looping clip (transition, `spawn`, idle extra) is applied when that clip ends. Changing your mind mid-transition plays it out and comes back (e.g. `sit_down` then `stand_up`).
+- `leave` plays once and holds its last frame until the session is removed.
+- Idle extras (`idle_look`, `idle_stretch`, `idle_scratch`) start 8–20 s into each `idle` loop, picked at random. They are deadlines the render loop sleeps until, not timers. Reduce motion turns them off.
+- Clips follow each other at exact times, so what shows depends only on the timestamps, not on how often the overlay redraws.
+
 ## Layout
 
 - Buddies stand side by side on an invisible "floor" in the chosen corner, 4 px gap, newest at the outer edge.
