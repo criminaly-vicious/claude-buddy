@@ -189,6 +189,10 @@ dependencies = [
 [[package]]
 name = "buddy-hook"
 version = "0.0.0"
+dependencies = [
+ "bridge-protocol",
+ "serde_json",
+]
 
 [[package]]
 name = "bumpalo"
