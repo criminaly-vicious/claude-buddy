@@ -9,8 +9,8 @@ export function drawScene(
 ): void {
   ctx.imageSmoothingEnabled = false;
   ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-  for (const { frame, x, y, size } of scene.sprites) {
-    ctx.drawImage(image, frame.x, frame.y, frame.w, frame.h, x, y, size, size);
+  for (const { frame, x, y, size, hop } of scene.sprites) {
+    ctx.drawImage(image, frame.x, frame.y, frame.w, frame.h, x, y + hop, size, size);
   }
   if (scene.chip) drawChip(ctx, scene.chip);
 }

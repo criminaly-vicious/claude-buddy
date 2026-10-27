@@ -90,6 +90,12 @@ Implemented in `apps/desktop/src/overlay/hoverCard.ts`:
 - **Placement:** the card sits on the side away from the screen edge (above in bottom corners), aligned with the buddy's outer side, and stays inside the overlay. The window grows to make room for it. While open, the card is a hit region.
 - **Leaving:** in the app, the backend's `overlay:pointer` event says when the pointer left every region, since the click-through window no longer sees it.
 
+### Click
+
+- A click on a buddy asks the backend to focus its session's terminal (docs/session-detection.md#window-focus-click-on-a-buddy). Clicks on the hover card do nothing.
+- **Happy hop:** when the window came to the front, the buddy hops 6 sprite px away from the floor and back in 320 ms (a parabola, whole sprite pixels), over whatever clip it is playing, sitting or standing, so no extra art is needed. The hit region and the hover card stay in place during the hop. No hop when nothing was focused.
+- In `pnpm dev:mock` there are no terminals, so every click hops.
+
 ## Accessibility & comfort
 
 - Option to reduce motion (no random idle extras, no screen shake).

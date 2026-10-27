@@ -218,9 +218,17 @@ The mapping lives in one table in the registry so it is easy to tune.
 
 ## Window focus (click on a buddy)
 
-1. From `CLAUDE_PID`, walk up the parent chain to the first process that owns a visible top-level window (`WindowsTerminal.exe`, `conhost.exe`, `Code.exe`, ...).
-2. `AllowSetForegroundWindow` + `SetForegroundWindow` on that window (restore if minimised).
-3. Windows Terminal hosts many tabs in one window: MVP focuses the window only. Tab-level focus is a later spike (UI Automation).
+1. From `CLAUDE_PID`, walk up the parent chain to the first process that owns a visible top-level window (`WindowsTerminal.exe`, `Code.exe`, ...).
+2. `SetForegroundWindow` on that window (restore if minimised).
+3. Windows Terminal hosts many tabs in one window: MVP focuses the window only. Tab-level focus is a later spike (#25, UI Automation).
+
+Implemented in `apps/desktop/src-tauri/src/win/focus.rs` (pure, tested everywhere) and `focus_win32.rs`:
+- **Which process:** the overlay sends only the session id (`focus_session`); the PID comes from the registry, so the page cannot point the backend at an arbitrary process.
+- **Parent chain:** one Toolhelp snapshot (`CreateToolhelp32Snapshot`). The walk stops at the desktop shell and system processes (`explorer.exe`, `svchost.exe`, `services.exe`, `wininit.exe`, `winlogon.exe`, `userinit.exe`, `sihost.exe`), so it never focuses an unrelated Explorer window. It also stops at a "parent" created after its child (a dead parent's PID reused), after 32 levels, and on loops.
+- **Which window:** the nearest process in the chain with a window Alt+Tab would show (visible, unowned, not a tool window, titled), front-most first. Minimised windows count and are restored.
+- **Classic console fallback:** a classic console window belongs to a `conhost.exe` that is a child of the shell, not a parent of the session, so the chain misses it. When the chain finds nothing, `AttachConsole(pid)` + `GetConsoleWindow` + `FreeConsole` gives the console window. If it is hidden (a pseudo console, e.g. Windows Terminal as the default terminal), its visible owner is used instead. Skipped when the app already has a console (debug builds), so the dev console is never detached.
+- **Foreground lock:** the click on the overlay normally lets the app call `SetForegroundWindow`. If Windows still refuses, the app attaches to the foreground thread's input (`AttachThreadInput`), retries, and detaches. It never sends keystrokes and never focuses anything without a click.
+- **Result:** `true` only when the window is in front afterwards; the buddy then hops. Any failure is silent.
 
 ## Windows checklist
 
@@ -231,5 +239,6 @@ Not verifiable from the Linux capture. Check on Windows 10/11 before implementin
 - [ ] Exec-form `buddy-hook.exe` with a path containing spaces runs with and without Git for Windows installed.
 - [ ] `async: true` hooks run and never show a hook error, including when `buddy-hook.exe` exits early.
 - [ ] `CLAUDE_PID` is set and points to the long-lived Claude process. Record the process tree under Windows Terminal, PowerShell, cmd and the VS Code terminal.
+- [ ] Clicking a buddy focuses the right window under Windows Terminal, classic PowerShell/cmd (conhost), Windows Terminal as the default terminal, and the VS Code terminal, including when minimised and when another app is in front.
 - [ ] `Notification` with `permission_prompt` and `idle_prompt` fires in an interactive session.
 - [ ] Settings watcher picks up installer changes in a running session.

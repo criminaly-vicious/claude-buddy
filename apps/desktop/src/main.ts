@@ -5,6 +5,7 @@ import { HitRegionSync } from "./overlay/hitSync";
 import { RenderLoop } from "./overlay/loop";
 import { cardLines, HoverState, placeCard, Rect } from "./overlay/hoverCard";
 import {
+  focusSession,
   getOverlayAnchor,
   HitRegion,
   onOverlayAnchor,
@@ -136,6 +137,21 @@ async function start(): Promise<void> {
       scene.setExpanded(false);
       loop.invalidate();
     }, COLLAPSE_AFTER_MS);
+  });
+
+  // Click on a buddy: focus its terminal; it hops when that worked. The
+  // browser mock has no terminals, so it always hops.
+  canvas.addEventListener("click", (event) => {
+    const id = pointerTarget(event.offsetX, event.offsetY);
+    if (id === null || id === "card") return;
+    const focused = inTauri ? focusSession(id) : Promise.resolve(true);
+    focused
+      .then((ok) => {
+        if (!ok) return;
+        scene.hop(id, performance.now());
+        loop.invalidate();
+      })
+      .catch(() => {}); // Best effort: nothing to show when focus fails.
   });
 
   // In the browser the page sees the pointer leave; in the app the overlay
