@@ -13,14 +13,16 @@ pub struct Tail {
     offset: u64,
     /// Bytes after the last newline, waiting for the rest of their line.
     partial: Vec<u8>,
-    /// Drop everything up to the first newline (we started mid-line).
+    /// Drop everything up to and including the first newline: we started
+    /// one byte before the cut, so this removes exactly the cut-off line (or
+    /// just the newline, when the cut fell on a line start).
     skip_to_newline: bool,
 }
 
 impl Tail {
     /// Starts near the end of a file of `len` bytes.
     pub fn near_end(len: u64) -> Self {
-        let offset = len.saturating_sub(INITIAL_TAIL_BYTES);
+        let offset = len.saturating_sub(INITIAL_TAIL_BYTES + 1);
         Self {
             offset,
             partial: Vec::new(),
@@ -49,9 +51,16 @@ impl Tail {
             return Ok(Vec::new());
         };
         let rest = self.partial.split_off(last_newline + 1);
-        let complete = std::mem::replace(&mut self.partial, rest);
+        let mut complete = std::mem::replace(&mut self.partial, rest);
+        if std::mem::take(&mut self.skip_to_newline) {
+            let first_newline = complete
+                .iter()
+                .position(|&b| b == b'\n')
+                .unwrap_or_default();
+            complete.drain(..=first_newline);
+        }
 
-        let mut lines: Vec<String> = complete
+        let lines: Vec<String> = complete
             .split(|&b| b == b'\n')
             .filter(|l| !l.is_empty())
             .map(|l| {
@@ -60,9 +69,6 @@ impl Tail {
                     .to_string()
             })
             .collect();
-        if std::mem::take(&mut self.skip_to_newline) && !lines.is_empty() {
-            lines.remove(0);
-        }
         Ok(lines)
     }
 }
@@ -140,6 +146,58 @@ mod tests {
         append(&path, "one\ntwo\n");
         let len = std::fs::metadata(&path).unwrap().len();
         assert_eq!(Tail::near_end(len).read_new(&path).unwrap(), ["one", "two"]);
+        let _ = std::fs::remove_file(path);
+    }
+}
+
+#[cfg(test)]
+mod boundary_tests {
+    use super::*;
+
+    /// Regression for #47: a cut exactly at a line start must not drop that line.
+    #[test]
+    fn cut_on_a_line_start_keeps_the_line() {
+        let path = std::env::temp_dir().join(format!(
+            "claude-buddy-tail-boundary-{}.jsonl",
+            std::process::id()
+        ));
+        // A first line of 99 bytes + newline, then exactly 64 KiB of 1 KiB lines.
+        let head = format!("{}\n", "h".repeat(99));
+        let line = format!("{}\n", "x".repeat(1023));
+        let body = line.repeat((INITIAL_TAIL_BYTES / 1024) as usize);
+        std::fs::write(&path, format!("{head}{body}")).unwrap();
+        let len = std::fs::metadata(&path).unwrap().len();
+        assert_eq!(
+            len - INITIAL_TAIL_BYTES,
+            head.len() as u64,
+            "cut falls on a line start"
+        );
+
+        let lines = Tail::near_end(len).read_new(&path).unwrap();
+        assert_eq!(lines.len(), 64, "all 64 whole lines after the cut");
+        assert!(lines.iter().all(|l| l.len() == 1023));
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn cut_mid_line_drops_only_the_partial_line() {
+        let path = std::env::temp_dir().join(format!(
+            "claude-buddy-tail-midline-{}.jsonl",
+            std::process::id()
+        ));
+        let head = format!("{}\n", "h".repeat(500));
+        let line = format!("{}\n", "x".repeat(1023));
+        let body = line.repeat((INITIAL_TAIL_BYTES / 1024) as usize);
+        // Shift by 10 bytes so the cut lands inside the first body line.
+        std::fs::write(&path, format!("{head}{body}tail-line\n")).unwrap();
+        let len = std::fs::metadata(&path).unwrap().len();
+
+        let lines = Tail::near_end(len).read_new(&path).unwrap();
+        assert_eq!(lines.last().map(String::as_str), Some("tail-line"));
+        assert!(
+            lines[..lines.len() - 1].iter().all(|l| l.len() == 1023),
+            "no cut line"
+        );
         let _ = std::fs::remove_file(path);
     }
 }
