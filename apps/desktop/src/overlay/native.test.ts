@@ -21,6 +21,12 @@ describe("overlay native commands", () => {
     });
   });
 
+  it("asks the backend to focus a session by id", async () => {
+    invoke.mockResolvedValue(true);
+    await expect(native.focusSession("abc")).resolves.toBe(true);
+    expect(invoke).toHaveBeenCalledWith("focus_session", { id: "abc" });
+  });
+
   it("maps element bounds to a region", () => {
     const element = {
       getBoundingClientRect: () => ({ left: 4, top: 5, width: 6, height: 7 }),

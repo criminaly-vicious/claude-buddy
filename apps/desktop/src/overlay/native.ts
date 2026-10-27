@@ -51,6 +51,14 @@ export function setOverlayAnchor(anchor: Anchor): Promise<void> {
   return invoke("set_overlay_anchor", { anchor });
 }
 
+/**
+ * Brings the terminal window of session `id` to the front. Resolves `true`
+ * only when it is now in the foreground (the buddy then hops).
+ */
+export function focusSession(id: string): Promise<boolean> {
+  return invoke("focus_session", { id });
+}
+
 /** Bounds of an element as a hit region (CSS pixels, overlay-relative). */
 export function regionOf(element: Element): HitRegion {
   const rect = element.getBoundingClientRect();

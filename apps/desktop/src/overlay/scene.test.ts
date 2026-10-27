@@ -4,7 +4,7 @@ import { parseAtlas } from "../sprites/atlas";
 import placeholder from "../sprites/placeholder/atlas.json";
 import type { BuddyState, SessionView } from "../types";
 import { HitRegionSync } from "./hitSync";
-import { Scene, SPRITE_SIZE, Viewport } from "./scene";
+import { HOP_MS, Scene, SPRITE_SIZE, Viewport } from "./scene";
 
 const atlas = parseAtlas(placeholder);
 const viewport: Viewport = { width: 960, height: 320, devicePixelRatio: 2, scale: 2 };
@@ -206,5 +206,33 @@ describe("Scene group layout", () => {
       width: (2 * SPRITE_SIZE + 4) * 2,
       height: (SPRITE_SIZE + 4) * 2,
     });
+  });
+
+  it("hops away from the floor after a click, then lands and sleeps again", () => {
+    const scene = new Scene(atlas, { reduceMotion: true });
+    scene.setSessions([view("a", "sleeping")], 0);
+    const rest = scene.render(settledAt, viewport);
+    expect(rest.sprites[0].hop).toBe(0);
+    scene.hop("a", settledAt);
+
+    const top = scene.render(settledAt + HOP_MS / 2, viewport);
+    expect(top.sprites[0].hop).toBe(-6 * px); // 6 sprite px up in a bottom corner
+    // Place and hit region stay put, so the hover card does not bounce.
+    expect(top.sprites[0]).toMatchObject({ x: rest.sprites[0].x, y: rest.sprites[0].y });
+    expect(top.regions).toEqual(rest.regions);
+    expect(top.nextChangeAt).toBeLessThanOrEqual(settledAt + HOP_MS / 2 + 34);
+
+    const landed = scene.render(settledAt + HOP_MS, viewport);
+    expect(landed.sprites[0].hop).toBe(0);
+    expect(landed.nextChangeAt).toBe(rest.nextChangeAt);
+  });
+
+  it("hops downwards in top corners and ignores unknown ids", () => {
+    const scene = new Scene(atlas, { reduceMotion: true });
+    scene.setCorner("top-left");
+    scene.setSessions([view("a", "idle")], 0);
+    scene.hop("nobody", settledAt);
+    scene.hop("a", settledAt);
+    expect(scene.render(settledAt + HOP_MS / 2, viewport).sprites[0].hop).toBe(6 * px);
   });
 });

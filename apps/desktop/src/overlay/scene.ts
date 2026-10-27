@@ -20,6 +20,9 @@ const STEP = 4;
 const WALK_SPEED = 64;
 /** Redraw interval while something moves (the loop caps at 30 fps anyway). */
 const MOVE_FRAME_MS = 1000 / 30;
+/** The happy hop after a click (#23): how long and how high, in sprite pixels. */
+export const HOP_MS = 320;
+const HOP_HEIGHT = 6;
 
 export interface Viewport {
   /** Canvas size in device pixels. */
@@ -38,6 +41,11 @@ export interface PlacedSprite {
   x: number;
   y: number;
   size: number;
+  /**
+   * Vertical drawing offset of a hop, in whole device pixels. `x`, `y` and
+   * the hit region stay at the buddy's place, so the card does not bounce.
+   */
+  hop: number;
 }
 
 export interface PlacedChip {
@@ -69,6 +77,8 @@ interface Buddy {
   /** Floor offset in sprite pixels while standing still; `null` until placed. */
   offset: number | null;
   walk: Walk | null;
+  /** When the last hop started. */
+  hopAt: number | null;
 }
 
 export class Scene {
@@ -143,7 +153,14 @@ export class Scene {
       }),
       offset: null,
       walk: null,
+      hopAt: null,
     });
+  }
+
+  /** The buddy does a small happy hop (its terminal was focused). */
+  hop(id: string, now: number): void {
+    const buddy = this.buddies.get(id);
+    if (buddy) buddy.hopAt = now;
   }
 
   /** A session is gone (`sessions:remove`); the buddies behind it walk up. */
@@ -206,7 +223,11 @@ export class Scene {
         changeAt(showing.nextChangeAt);
       }
       const { x, y } = place({ offset, lift: target.lift });
-      sprites.push({ id, frame, x, y, size });
+      const lift = this.hopLift(buddy, now);
+      if (lift > 0) changeAt(now + MOVE_FRAME_MS);
+      // Away from the floor: up in bottom corners, down in top ones.
+      const hop = lift === 0 ? 0 : (this.corner.startsWith("bottom") ? -lift : lift) * pixel;
+      sprites.push({ id, frame, x, y, size, hop });
       regions.push({ x: x / css, y: y / css, width: size / css, height: size / css });
     }
 
@@ -254,6 +275,17 @@ export class Scene {
       buddy.walk = null;
     }
     return position;
+  }
+
+  /** Height of the current hop in whole sprite pixels (a parabola), 0 when done. */
+  private hopLift(buddy: Buddy, now: number): number {
+    if (buddy.hopAt === null) return 0;
+    const t = (now - buddy.hopAt) / HOP_MS;
+    if (t < 0 || t >= 1) {
+      if (t >= 1) buddy.hopAt = null;
+      return 0;
+    }
+    return Math.round(HOP_HEIGHT * 4 * t * (1 - t));
   }
 
   private offsetAt(buddy: Buddy, now: number): number {
