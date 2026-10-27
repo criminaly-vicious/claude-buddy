@@ -36,7 +36,7 @@
 | Session Registry | Rust | Single source of truth. Merges both sources, runs the [state machine](session-detection.md#state-machine), expires dead sessions, emits diffs to the UI. |
 | Hook Installer | Rust | Adds/removes our hook entries in `~/.claude/settings.json` with backup and key-preserving merge. |
 | Overlay | TypeScript, Canvas 2D | Transparent, frameless, always-on-top, click-through window covering the chosen corner. Draws buddies from sprite sheets, runs physics, shows hover card. |
-| Win Integration | Rust (`windows-sys`), `src-tauri/src/win/` | Overlay window: corner anchoring on the chosen monitor's work area, DPI and display changes, click-through except over regions registered with `set_hit_regions` ([ADR-0011](../.context/decisions/0011-overlay-click-through.md)), expand to the full monitor for throws. Later: focus the terminal window owning a session PID, autostart, global hotkey. |
+| Win Integration | Rust (`windows-sys`), `src-tauri/src/win/` | Overlay window: corner anchoring on the chosen monitor's work area, DPI and display changes, click-through except over regions registered with `set_hit_regions` ([ADR-0011](../.context/decisions/0011-overlay-click-through.md)), expand to the work area for throws, focus the terminal window owning a session PID. Later: autostart, global hotkey. |
 | Tray & Settings | Tauri tray + small settings window | Show/hide, install hooks, settings, quit. |
 
 ## Data model
@@ -225,7 +225,7 @@ docs/                    human docs
 
 - Render loop runs only while something animates; otherwise the canvas sleeps. Idle animations are scheduled, not polled. The scene reports when the next sprite frame changes, and the loop (`apps/desktop/src/overlay/loop.ts`) sleeps on a timer until then: with five buddies it redraws about 16 times a second, not 30, and not at all with none.
 - Cap at 30 fps; pixel art does not need more.
-- Overlay window sized to the buddy area, not full screen, except while a buddy is being thrown (expand temporarily).
+- Overlay window sized to the buddy area, not full screen, except while a buddy is dragged or thrown (expanded to the work area until it is back in its slot).
 - Click-through follows the cursor through a low-level mouse hook that runs only when the mouse moves (ADR-0011), not a timer.
 - Pause rendering when the overlay is hidden or the session list is empty.
 - File watcher is event-based with debounce; process liveness checked every 5 s.

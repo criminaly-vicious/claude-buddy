@@ -6,7 +6,8 @@
  * Rules:
  * - A non-looping clip (transition, spawn, idle extra) always plays to its
  *   end; a state change that arrives meanwhile is applied when it finishes.
- *   (`grabbed`, the one exception in the spec, comes with throwing in #24.)
+ *   (`grabbed`, the one exception in the spec, is played over the controller
+ *   by the scene while a buddy is thrown: see `throw.ts`.)
  * - Clips follow each other at exact times, so the result depends only on
  *   the timestamps given, not on how often the controller is asked.
  * - Idle extras are scheduled deadlines, not timers: the render loop sleeps

@@ -10,6 +10,7 @@ import type { SessionView } from "../types";
 import { AnimationController, ControllerOptions } from "./controller";
 import { FloorPosition, layout, toCanvas } from "./layout";
 import type { Corner, HitRegion } from "./native";
+import { Bounds, Point, Throw, ThrowClips } from "./throw";
 
 /** Sprite frame size in the atlas, in sprite pixels. */
 export const SPRITE_SIZE = 32;
@@ -32,6 +33,19 @@ export interface Viewport {
   devicePixelRatio: number;
   /** Buddy scale in CSS pixels per sprite pixel (settings: 1x/2x/3x). */
   scale: number;
+  /**
+   * Where the group's corner area lies on the canvas, in device pixels.
+   * The whole canvas unless the overlay is expanded for a throw.
+   */
+  home?: { x: number; y: number; width: number; height: number };
+}
+
+/** An area in CSS pixels relative to the home area's top-left corner. */
+export interface Area {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
 }
 
 export interface PlacedSprite {
@@ -90,6 +104,17 @@ export class Scene {
   /** When the slots last changed, so walks start then, not at the next render. */
   private layoutChangedAt = 0;
   private readonly walkClip: Clip;
+  private readonly throwClips: ThrowClips;
+  /** Buddies being dragged or thrown, until they are back in their slot. */
+  private throws = new Map<string, Throw>();
+  private grabbed: string | null = null;
+  /** Where thrown buddies may fly: the work area, relative to home (CSS px). */
+  private workArea: Area | null = null;
+  /** Last drawn place of each buddy (home-relative CSS px), and the sprite size there. */
+  private placed = new Map<string, Point>();
+  private spriteCss = SPRITE_SIZE;
+  private homeCss = { width: 0, height: 0 };
+  private walkSpeedCss = WALK_SPEED;
 
   constructor(
     private readonly atlas: Atlas,
@@ -98,6 +123,80 @@ export class Scene {
     const walk = atlas.clips.get("walk");
     if (!walk) throw new Error('atlas has no "walk" animation');
     this.walkClip = walk;
+    const clip = (name: string) => {
+      const found = atlas.clips.get(name);
+      if (!found) throw new Error(`atlas has no "${name}" animation`);
+      return found;
+    };
+    this.throwClips = {
+      grabbed: clip("grabbed"),
+      fly: clip("fly"),
+      land: clip("land"),
+      land_splat: clip("land_splat"),
+      dizzy: clip("dizzy"),
+      walk,
+    };
+  }
+
+  /** Whether any buddy is held, flying, landing or walking back from a throw. */
+  get busy(): boolean {
+    return this.throws.size > 0;
+  }
+
+  isThrown(id: string): boolean {
+    return this.throws.has(id);
+  }
+
+  /** The area thrown buddies bounce in (the expanded overlay), home-relative CSS px. */
+  setWorkArea(area: Area): void {
+    this.workArea = area;
+    for (const t of this.throws.values()) t.setBounds(this.bounds());
+  }
+
+  /**
+   * Picks up buddy `id` at `pointer` (home-relative CSS px). Works on a
+   * buddy in mid-air too. Returns whether there was a buddy to grab.
+   */
+  grab(id: string, pointer: Point, now: number): boolean {
+    const at = this.throws.get(id)?.update(now, pointer) ?? this.placed.get(id);
+    if (!at || !this.buddies.has(id)) return false;
+    this.throws.set(
+      id,
+      new Throw({ x: at.x, y: at.y }, pointer, now, {
+        clips: this.throwClips,
+        bounds: this.bounds(),
+        walkSpeed: this.walkSpeedCss,
+      }),
+    );
+    this.grabbed = id;
+    return true;
+  }
+
+  /** The held buddy follows the pointer (home-relative CSS px). */
+  drag(pointer: Point, now: number): void {
+    if (this.grabbed) this.throws.get(this.grabbed)?.drag(pointer, now);
+  }
+
+  /** Lets go of the held buddy. */
+  release(now: number): void {
+    if (this.grabbed) this.throws.get(this.grabbed)?.release(now);
+    this.grabbed = null;
+  }
+
+  /** Where a sprite's corner may go: the work area minus the sprite (or the home area). */
+  private bounds(): Bounds {
+    const area = this.workArea ?? {
+      left: 0,
+      top: 0,
+      right: this.homeCss.width,
+      bottom: this.homeCss.height,
+    };
+    return {
+      left: area.left,
+      top: area.top,
+      right: Math.max(area.left, area.right - this.spriteCss),
+      bottom: Math.max(area.top, area.bottom - this.spriteCss),
+    };
   }
 
   get size(): number {
@@ -166,6 +265,9 @@ export class Scene {
   /** A session is gone (`sessions:remove`); the buddies behind it walk up. */
   remove(id: string, now: number): void {
     if (this.buddies.delete(id)) this.layoutChangedAt = now;
+    this.throws.delete(id);
+    this.placed.delete(id);
+    if (this.grabbed === id) this.grabbed = null;
   }
 
   render(now: number, viewport: Viewport): SceneFrame {
@@ -173,6 +275,10 @@ export class Scene {
     const pixel = Math.max(1, Math.round(viewport.scale * viewport.devicePixelRatio));
     const size = SPRITE_SIZE * pixel;
     const css = viewport.devicePixelRatio;
+    const home = viewport.home ?? { x: 0, y: 0, width: viewport.width, height: viewport.height };
+    this.spriteCss = size / css;
+    this.homeCss = { width: home.width / css, height: home.height / css };
+    this.walkSpeedCss = WALK_SPEED * viewport.scale;
 
     const waiting = new Set(
       [...this.buddies].filter(([, b]) => b.view.state === "waiting").map(([id]) => id),
@@ -187,13 +293,16 @@ export class Scene {
       expanded: this.expanded,
     });
     // Rounded: mid-walk offsets are fractional, and pixel art must stay on whole pixels.
-    const place = (pos: FloorPosition) =>
-      toCanvas(
+    const place = (pos: FloorPosition) => {
+      const at = toCanvas(
         { offset: Math.round(pos.offset * pixel), lift: pos.lift * pixel },
         this.corner,
-        viewport,
+        home,
         size,
       );
+      return { x: at.x + home.x, y: at.y + home.y };
+    };
+    const toHome = (p: Point): Point => ({ x: (p.x - home.x) / css, y: (p.y - home.y) / css });
 
     const sprites: PlacedSprite[] = [];
     const regions: HitRegion[] = [];
@@ -204,6 +313,27 @@ export class Scene {
 
     for (const [id, buddy] of this.buddies) {
       const target = plan.buddies.get(id);
+      const thrown = this.throws.get(id);
+      if (thrown) {
+        // In the air or on its way back: logically it already holds its slot.
+        if (target) {
+          buddy.offset = target.offset;
+          buddy.walk = null;
+        }
+        const slot = target ? toHome(place(target)) : (this.placed.get(id) ?? { x: 0, y: 0 });
+        const shown = thrown.update(now, slot);
+        if (shown.phase === "done") {
+          this.throws.delete(id);
+        } else {
+          const x = Math.round(home.x + shown.x * css);
+          const y = Math.round(home.y + shown.y * css);
+          sprites.push({ id, frame: shown.frame, x, y, size, hop: 0 });
+          regions.push({ x: x / css, y: y / css, width: size / css, height: size / css });
+          this.placed.set(id, { x: shown.x, y: shown.y });
+          changeAt(now + MOVE_FRAME_MS);
+          continue;
+        }
+      }
       if (!target) {
         // Hidden behind the chip: placed afresh (no walk) when it reappears.
         buddy.offset = null;
@@ -228,6 +358,7 @@ export class Scene {
       // Away from the floor: up in bottom corners, down in top ones.
       const hop = lift === 0 ? 0 : (this.corner.startsWith("bottom") ? -lift : lift) * pixel;
       sprites.push({ id, frame, x, y, size, hop });
+      this.placed.set(id, toHome({ x, y }));
       regions.push({ x: x / css, y: y / css, width: size / css, height: size / css });
     }
 

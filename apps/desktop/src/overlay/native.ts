@@ -25,8 +25,19 @@ export function setHitRegions(regions: HitRegion[]): Promise<void> {
   return invoke("set_hit_regions", { regions });
 }
 
-/** Grows the overlay to its whole monitor, e.g. while a buddy is thrown. */
-export function expandOverlay(): Promise<void> {
+/** The expanded overlay (CSS pixels): its size and where the corner area sits in it. */
+export interface ExpandedLayout {
+  width: number;
+  height: number;
+  home: HitRegion;
+}
+
+/**
+ * Grows the overlay to its monitor's work area while a buddy is dragged or
+ * thrown. Resolves where the anchored corner area lies inside it, or `null`
+ * when the backend knows no monitor.
+ */
+export function expandOverlay(): Promise<ExpandedLayout | null> {
   return invoke("overlay_expand");
 }
 
