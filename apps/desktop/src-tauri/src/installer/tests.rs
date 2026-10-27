@@ -336,3 +336,88 @@ fn hooks_are_recognised_by_file_name_on_any_path() {
         assert!(!is_ours(&json!({ "command": command })), "{command}");
     }
 }
+
+#[cfg(unix)]
+#[test]
+fn writes_through_a_symlinked_settings_file() {
+    let original = fixture("no-hooks.json");
+    let (installer, dir) = settings("symlink", None);
+    let dotfiles = dir.join("dotfiles");
+    fs::create_dir_all(&dotfiles).unwrap();
+    let real = dotfiles.join("settings.json");
+    fs::write(&real, &original).unwrap();
+    let link = dir.join("settings.json");
+    std::os::unix::fs::symlink(&real, &link).unwrap();
+
+    let applied = installer.install().unwrap();
+    assert!(fs::symlink_metadata(&link)
+        .unwrap()
+        .file_type()
+        .is_symlink());
+    assert!(fs::read_to_string(&real)
+        .unwrap()
+        .contains("buddy-hook.exe"));
+    let backup = applied.backup.unwrap();
+    assert_eq!(
+        backup.parent(),
+        Some(dotfiles.as_path()),
+        "backup next to the real file"
+    );
+
+    installer.uninstall().unwrap();
+    assert!(fs::symlink_metadata(&link)
+        .unwrap()
+        .file_type()
+        .is_symlink());
+    assert_eq!(fs::read_to_string(&real).unwrap(), original);
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[cfg(unix)]
+#[test]
+fn writes_through_a_dangling_relative_symlink() {
+    let (installer, dir) = settings("dangling", None);
+    std::os::unix::fs::symlink("dotfiles/settings.json", dir.join("settings.json")).unwrap();
+    fs::create_dir_all(dir.join("dotfiles")).unwrap();
+
+    installer.install().unwrap();
+    assert!(fs::symlink_metadata(dir.join("settings.json"))
+        .unwrap()
+        .file_type()
+        .is_symlink());
+    assert!(installer.is_installed().unwrap());
+    assert!(dir.join("dotfiles/settings.json").is_file());
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[test]
+fn keeps_only_the_newest_backups() {
+    let (installer, dir) = settings("prune", Some(&fixture("no-hooks.json")));
+    let path = dir.join("settings.json");
+    for millis in [1, 2, 3, 4, 5, 6, 7] {
+        fs::write(
+            dir.join(format!("settings.json.claude-buddy-backup-{millis}")),
+            "old",
+        )
+        .unwrap();
+    }
+    fs::write(
+        dir.join("settings.json.claude-buddy-backup-notanumber"),
+        "keep me",
+    )
+    .unwrap();
+
+    installer.install().unwrap();
+    let mut left: Vec<String> = backups(&dir)
+        .iter()
+        .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
+        .collect();
+    left.sort();
+    assert_eq!(left.len(), MAX_BACKUPS + 1, "{left:?}");
+    assert!(left.contains(&"settings.json.claude-buddy-backup-notanumber".to_string()));
+    for gone in [1, 2, 3] {
+        assert!(!left.contains(&format!("settings.json.claude-buddy-backup-{gone}")));
+    }
+    assert!(path.is_file());
+    let _ = fs::remove_dir_all(dir);
+}

@@ -36,6 +36,9 @@ const HOOK_FILE_NAMES: &[&str] = &["buddy-hook.exe", "buddy-hook"];
 /// it for async hooks; `buddy-hook` has its own much shorter limit.
 const HOOK_TIMEOUT_SECS: u64 = 5;
 
+/// Backups kept next to `settings.json`; older ones are deleted.
+const MAX_BACKUPS: usize = 5;
+
 /// `<config>/settings.json`, see [`crate::claude_dir::config_dir`].
 pub fn default_settings_path() -> Option<PathBuf> {
     Some(crate::claude_dir::config_dir()?.join("settings.json"))
@@ -177,12 +180,16 @@ impl HookInstaller {
                 changed: false,
             });
         }
+        // Write through symlinks (dotfile setups), so the link survives.
+        let target = resolve_symlinks(&self.settings_path)?;
         let backup = if plan.before.is_empty() {
             None
         } else {
-            Some(backup(&self.settings_path)?)
+            let backup = backup(&target)?;
+            prune_backups(&target, MAX_BACKUPS);
+            Some(backup)
         };
-        write_atomically(&self.settings_path, &plan.after)?;
+        write_atomically(&target, &plan.after)?;
         Ok(Applied {
             backup,
             changed: true,
@@ -321,6 +328,48 @@ fn uninstall(root: &mut Map<String, Value>) {
     }
     if hooks.is_empty() && removed_any {
         root.shift_remove("hooks");
+    }
+}
+
+/// The file `path` finally points to, following symlinks (also dangling
+/// ones, so a link to a not-yet-created file is written through too).
+fn resolve_symlinks(path: &Path) -> io::Result<PathBuf> {
+    let mut current = path.to_path_buf();
+    for _ in 0..40 {
+        match fs::symlink_metadata(&current) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                let link = fs::read_link(&current)?;
+                current = match current.parent() {
+                    Some(dir) if link.is_relative() => dir.join(link),
+                    _ => link,
+                };
+            }
+            _ => return Ok(current),
+        }
+    }
+    Err(io::Error::other("too many levels of symbolic links"))
+}
+
+/// Deletes all but the newest `keep` backups of `path`.
+fn prune_backups(path: &Path, keep: usize) {
+    let (Some(dir), Some(name)) = (path.parent(), path.file_name()) else {
+        return;
+    };
+    let prefix = format!("{}.claude-buddy-backup-", name.to_string_lossy());
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    let mut backups: Vec<(u128, PathBuf)> = entries
+        .flatten()
+        .filter_map(|entry| {
+            let file_name = entry.file_name().to_string_lossy().into_owned();
+            let millis = file_name.strip_prefix(&prefix)?.parse().ok()?;
+            Some((millis, entry.path()))
+        })
+        .collect();
+    backups.sort_unstable_by(|a, b| b.0.cmp(&a.0));
+    for (_, old) in backups.into_iter().skip(keep) {
+        let _ = fs::remove_file(old);
     }
 }
 
