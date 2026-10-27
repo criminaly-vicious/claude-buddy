@@ -176,6 +176,8 @@ The mapping lives in one table in the registry so it is easy to tune.
 
 - Minimum display time per state: 600 ms, so quick tool flips do not cause jitter.
 - `waiting` has priority: it is only left on a new tool/prompt event or `Stop`.
+- `waiting` and `leaving` skip the minimum display time: the user must see them at once. A state queued behind the minimum is replaced by any newer one, so only the latest is shown.
+- Implemented in `apps/desktop/src-tauri/src/registry/` as pure logic: the caller passes the time in, `Registry::apply` takes a normalised event, `Registry::tick` runs the timers, and `Registry::next_deadline` says when the next tick is due, so nothing polls.
 
 ## Liveness
 
