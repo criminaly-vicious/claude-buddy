@@ -25,6 +25,10 @@ pub const OVERLAY_LABEL: &str = "overlay";
 const DEFAULT_SIZE: (f64, f64) = (480.0, 160.0);
 /// Event carrying the new [`Anchor`] whenever it changes.
 pub const EVENT_ANCHOR: &str = "overlay:anchor";
+/// Event carrying `true` when the pointer enters a registered region and
+/// `false` when it leaves them all. Once click-through, the page itself no
+/// longer sees the mouse, so this is how it learns the pointer left.
+pub const EVENT_POINTER: &str = "overlay:pointer";
 /// Gap between the overlay and the work-area edges, in logical pixels.
 const MARGIN: f64 = 8.0;
 
@@ -64,6 +68,7 @@ impl Overlay {
             .spawn(move || {
                 for interactive in toggle_rx {
                     set_click_through(&applier, !interactive);
+                    let _ = applier.emit(EVENT_POINTER, interactive);
                 }
             })?;
         // Lives for the whole process: the mouse hook holds a reference to it.
