@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
 /** A rectangle in CSS pixels relative to the overlay's top-left corner. */
 export interface HitRegion {
@@ -34,6 +35,14 @@ export function restoreOverlay(): Promise<void> {
   return invoke("overlay_restore");
 }
 
+/**
+ * Tells the backend how much room the buddies need (CSS pixels), so the
+ * overlay window grows or shrinks around the group from its corner.
+ */
+export function setOverlayContentSize(width: number, height: number): Promise<void> {
+  return invoke("set_overlay_content_size", { width, height });
+}
+
 export function getOverlayAnchor(): Promise<Anchor> {
   return invoke("get_overlay_anchor");
 }
@@ -46,4 +55,9 @@ export function setOverlayAnchor(anchor: Anchor): Promise<void> {
 export function regionOf(element: Element): HitRegion {
   const rect = element.getBoundingClientRect();
   return { x: rect.left, y: rect.top, width: rect.width, height: rect.height };
+}
+
+/** Calls `handler` whenever the overlay's anchor changes (settings, #28). */
+export function onOverlayAnchor(handler: (anchor: Anchor) => void): Promise<() => void> {
+  return listen<Anchor>("overlay:anchor", (event) => handler(event.payload));
 }

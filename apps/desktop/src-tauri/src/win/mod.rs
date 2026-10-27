@@ -14,15 +14,17 @@ use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
-use tauri::{Manager, Monitor, PhysicalPosition, PhysicalSize, WebviewWindow};
+use tauri::{Emitter, Manager, Monitor, PhysicalPosition, PhysicalSize, WebviewWindow};
 
 pub use geometry::{Corner, LogicalRect, Rect};
 use hit::HitTester;
 
 /// Label of the overlay window in `tauri.conf.json`.
 pub const OVERLAY_LABEL: &str = "overlay";
-/// Overlay size in logical pixels while anchored.
-const OVERLAY_SIZE: (f64, f64) = (480.0, 160.0);
+/// Overlay size in logical pixels until the frontend reports the group's size.
+const DEFAULT_SIZE: (f64, f64) = (480.0, 160.0);
+/// Event carrying the new [`Anchor`] whenever it changes.
+pub const EVENT_ANCHOR: &str = "overlay:anchor";
 /// Gap between the overlay and the work-area edges, in logical pixels.
 const MARGIN: f64 = 8.0;
 
@@ -39,6 +41,8 @@ pub struct Anchor {
 pub struct Overlay {
     window: WebviewWindow,
     anchor: Mutex<Anchor>,
+    /// Logical size the buddies need, from the frontend's layout (#21).
+    content_size: Mutex<(f64, f64)>,
     expanded: AtomicBool,
     tester: &'static Mutex<HitTester>,
 }
@@ -73,6 +77,7 @@ impl Overlay {
         let overlay = Arc::new(Self {
             window,
             anchor: Mutex::new(Anchor::default()),
+            content_size: Mutex::new(DEFAULT_SIZE),
             expanded: AtomicBool::new(false),
             tester,
         });
@@ -105,6 +110,19 @@ impl Overlay {
 
     pub fn set_anchor(&self, anchor: Anchor) -> tauri::Result<()> {
         *lock(&self.anchor) = anchor;
+        self.place()?;
+        // The frontend lays buddies out from this corner.
+        self.window.emit(EVENT_ANCHOR, anchor)
+    }
+
+    /// Resizes the anchored overlay to fit the group (logical pixels). The
+    /// corner stays put; the size is clamped to the work area when placed.
+    pub fn set_content_size(&self, width: f64, height: f64) -> tauri::Result<()> {
+        let size = (width.max(1.0), height.max(1.0));
+        if *lock(&self.content_size) == size {
+            return Ok(());
+        }
+        *lock(&self.content_size) = size;
         self.place()
     }
 
@@ -145,7 +163,8 @@ impl Overlay {
                 width: work.size.width,
                 height: work.size.height,
             };
-            geometry::anchor(work, OVERLAY_SIZE, scale, self.anchor().corner, MARGIN)
+            let size = *lock(&self.content_size);
+            geometry::anchor(work, size, scale, self.anchor().corner, MARGIN)
         };
         self.window
             .set_size(PhysicalSize::new(rect.width, rect.height))?;
@@ -203,6 +222,21 @@ pub fn overlay_expand(overlay: tauri::State<'_, Arc<Overlay>>) -> Result<(), Str
 #[tauri::command]
 pub fn overlay_restore(overlay: tauri::State<'_, Arc<Overlay>>) -> Result<(), String> {
     overlay.restore().map_err(|e| e.to_string())
+}
+
+/// Frontend: the room the buddies need, in CSS pixels.
+#[tauri::command]
+pub fn set_overlay_content_size(
+    overlay: tauri::State<'_, Arc<Overlay>>,
+    width: f64,
+    height: f64,
+) -> Result<(), String> {
+    if !(width.is_finite() && height.is_finite()) {
+        return Err("size must be finite".into());
+    }
+    overlay
+        .set_content_size(width, height)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
