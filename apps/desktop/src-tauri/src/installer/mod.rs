@@ -44,6 +44,27 @@ pub fn default_settings_path() -> Option<PathBuf> {
     Some(crate::claude_dir::config_dir()?.join("settings.json"))
 }
 
+/// `claude-buddy --uninstall-hooks`, run by the uninstaller (#31): removes
+/// our hooks from the default settings file without any dialog. Returns
+/// the process exit code: 0 when no Claude Buddy hook is left.
+pub fn uninstall_cli() -> i32 {
+    default_settings_path().map_or(0, |settings| uninstall_at(&settings))
+}
+
+fn uninstall_at(settings: &Path) -> i32 {
+    // Uninstalling matches our hooks by file name, so no command is needed.
+    match HookInstaller::new(settings, PathBuf::new()).uninstall() {
+        Ok(_) => 0,
+        Err(error) => {
+            eprintln!(
+                "claude-buddy: could not remove the hooks from {}: {error}",
+                settings.display()
+            );
+            1
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum InstallError {
     Io(io::Error),

@@ -60,6 +60,15 @@ fn start_transcript_watcher(app: &tauri::App, inputs: std::sync::mpsc::Sender<br
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // The uninstaller runs `claude-buddy --uninstall-hooks` (#31), maybe
+    // while the app is open, so this comes before the single-instance check.
+    if std::env::args()
+        .skip(1)
+        .any(|arg| arg == "--uninstall-hooks")
+    {
+        std::process::exit(installer::uninstall_cli());
+    }
+
     // A second launch shows the first instance's buddies and exits.
     let app_handle: Arc<OnceLock<AppHandle>> = Arc::default();
     let first = Arc::clone(&app_handle);

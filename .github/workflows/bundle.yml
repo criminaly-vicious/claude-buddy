@@ -1,0 +1,51 @@
+name: bundle
+
+# Builds the Windows installer and uploads it as the `installer` artifact.
+# Called by ci.yml (every PR, for testing) and release.yml (tagged releases).
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  installer:
+    name: windows installer
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      # Version comes from "packageManager" in package.json.
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: bundle
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm bundle
+
+      - name: Check the installer (budget 15 MB, docs/scope.md)
+        shell: pwsh
+        run: |
+          if (-not (Test-Path target/release/buddy-hook.exe)) { throw "buddy-hook.exe was not bundled next to the app" }
+          $file = Get-ChildItem target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
+          if (-not $file) { throw "No NSIS installer was built" }
+          $mb = [math]::Round($file.Length / 1MB, 2)
+          "Installer: ``$($file.Name)``, $mb MB" | Tee-Object -Append -FilePath $env:GITHUB_STEP_SUMMARY
+          if ($file.Length -gt 15MB) { throw "The installer is $mb MB, over the 15 MB budget" }
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: installer
+          path: target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
+          retention-days: 14

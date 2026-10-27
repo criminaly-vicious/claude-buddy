@@ -9,6 +9,7 @@
     "tauri": "pnpm --filter @claude-buddy/desktop tauri",
     "dev:mock": "pnpm --filter @claude-buddy/desktop dev:mock",
     "lint": "pnpm -r lint",
-    "test": "pnpm -r test"
+    "test": "pnpm -r test",
+    "bundle": "cargo build --release -p buddy-hook --target-dir target/hook && pnpm tauri build --config src-tauri/tauri.bundle.conf.json"
   }
 }

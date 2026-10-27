@@ -421,3 +421,45 @@ fn keeps_only_the_newest_backups() {
     assert!(path.is_file());
     let _ = fs::remove_dir_all(dir);
 }
+
+#[test]
+fn uninstall_cli_removes_only_our_hooks() {
+    let (installer, dir) = settings("cli", Some(&fixture("no-hooks.json")));
+    installer.install().unwrap();
+    let path = dir.join("settings.json");
+    let mut json = read_json(&path);
+    json["hooks"]["Stop"][0]["hooks"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"type": "command", "command": "notify-send done"}));
+    fs::write(&path, serde_json::to_string_pretty(&json).unwrap()).unwrap();
+
+    assert_eq!(uninstall_at(&path), 0);
+    let after = read_json(&path);
+    for event in EVENTS {
+        assert!(ours(&after, event).is_empty(), "{event}");
+    }
+    assert_eq!(
+        after["hooks"]["Stop"][0]["hooks"],
+        json!([{"type": "command", "command": "notify-send done"}])
+    );
+    assert_eq!(uninstall_at(&path), 0, "nothing left to remove");
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn uninstall_cli_succeeds_without_a_settings_file() {
+    let (_, dir) = settings("cli-missing", None);
+    assert_eq!(uninstall_at(&dir.join("settings.json")), 0);
+    assert!(!dir.join("settings.json").exists());
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn uninstall_cli_fails_on_invalid_json_and_leaves_it() {
+    let (_, dir) = settings("cli-invalid", Some("{ not json"));
+    let path = dir.join("settings.json");
+    assert_eq!(uninstall_at(&path), 1);
+    assert_eq!(fs::read_to_string(&path).unwrap(), "{ not json");
+    let _ = fs::remove_dir_all(&dir);
+}
