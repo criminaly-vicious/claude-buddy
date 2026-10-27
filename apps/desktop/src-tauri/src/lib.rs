@@ -19,10 +19,10 @@ use win::Overlay;
 
 type SharedRegistry = Arc<Mutex<Registry>>;
 
-/// Dev-only view of the registry, for checking states without the overlay.
-#[cfg(debug_assertions)]
+/// Current sessions, for the overlay when it starts (the startup
+/// `sessions:snapshot` event fires before the page listens).
 #[tauri::command]
-fn debug_sessions(registry: tauri::State<'_, SharedRegistry>) -> Vec<registry::SessionView> {
+fn get_sessions(registry: tauri::State<'_, SharedRegistry>) -> Vec<registry::SessionView> {
     registry
         .lock()
         .map(|registry| registry.snapshot())
@@ -110,7 +110,7 @@ pub fn run() {
         win::overlay_restore,
         win::get_overlay_anchor,
         win::set_overlay_anchor,
-        debug_sessions,
+        get_sessions,
         debug_hook_install_plan
     ]);
     #[cfg(not(debug_assertions))]
@@ -119,7 +119,8 @@ pub fn run() {
         win::overlay_expand,
         win::overlay_restore,
         win::get_overlay_anchor,
-        win::set_overlay_anchor
+        win::set_overlay_anchor,
+        get_sessions
     ]);
 
     builder

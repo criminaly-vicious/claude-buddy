@@ -223,7 +223,7 @@ docs/                    human docs
 
 ## Performance strategy
 
-- Render loop runs only while something animates; otherwise the canvas sleeps. Idle animations are scheduled, not polled.
+- Render loop runs only while something animates; otherwise the canvas sleeps. Idle animations are scheduled, not polled. The scene reports when the next sprite frame changes, and the loop (`apps/desktop/src/overlay/loop.ts`) sleeps on a timer until then: with five buddies it redraws about 16 times a second, not 30, and not at all with none.
 - Cap at 30 fps; pixel art does not need more.
 - Overlay window sized to the buddy area, not full screen, except while a buddy is being thrown (expand temporarily).
 - Click-through follows the cursor through a low-level mouse hook that runs only when the mouse moves (ADR-0011), not a timer.

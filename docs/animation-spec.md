@@ -6,6 +6,7 @@
 - Base canvas **32×32 px** per frame, drawn at integer scale (1x/2x/3x) with nearest-neighbour filtering.
 - Props are separate layers in the source file: laptop, paper sheet, `!` bubble, `z` bubble, sweat drop.
 - Source files in Aseprite (`assets/sprites/buddy.aseprite`), exported to a PNG atlas + JSON (frame tags = animation names).
+- Until the real art lands (#19), `apps/desktop/src/sprites/placeholder/` holds a generated, deliberately abstract atlas with every animation tag, so the pipeline runs end to end. The overlay checks at startup that every animation it needs exists in the atlas.
 
 ## Animations
 
