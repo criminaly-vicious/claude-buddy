@@ -61,3 +61,12 @@ export function regionOf(element: Element): HitRegion {
 export function onOverlayAnchor(handler: (anchor: Anchor) => void): Promise<() => void> {
   return listen<Anchor>("overlay:anchor", (event) => handler(event.payload));
 }
+
+/**
+ * Calls `handler(false)` when the pointer leaves every buddy, chip and card
+ * region (the overlay turns click-through and stops seeing the mouse), and
+ * `handler(true)` when it enters one.
+ */
+export function onOverlayPointer(handler: (inside: boolean) => void): Promise<() => void> {
+  return listen<boolean>("overlay:pointer", (event) => handler(event.payload));
+}
