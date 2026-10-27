@@ -63,7 +63,7 @@ UI receives the full list on start (`sessions:snapshot`) then diffs (`sessions:u
 
 ## Bridge protocol
 
-Contract between `buddy-hook` (client, #11) and the bridge (server, #12). Protocol version **1**. Decision record: [ADR-0003](../.context/decisions/0003-loopback-http-bridge.md).
+Contract between `buddy-hook` (client, #11) and the bridge (server, #12). Protocol version **1**. Types, limits and path resolution are implemented once in `crates/bridge-protocol`, which both sides depend on. Decision record: [ADR-0003](../.context/decisions/0003-loopback-http-bridge.md).
 
 ### Discovery file: `bridge.json`
 
@@ -215,6 +215,7 @@ apps/desktop/            Tauri app
     sprites/             sprite sheet loader + atlas json
   src-tauri/             Rust: bridge, registry, watcher, installer, win
 crates/buddy-hook/       hook CLI
+crates/bridge-protocol/  wire contract shared by buddy-hook and the bridge
 assets/sprites/          source .aseprite files + exported png/json
 docs/                    human docs
 .context/                agent briefs + ADRs

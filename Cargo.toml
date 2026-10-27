@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["apps/desktop/src-tauri", "crates/buddy-hook"]
+members = ["apps/desktop/src-tauri", "crates/bridge-protocol", "crates/buddy-hook"]
 
 [workspace.package]
 version = "0.0.0"
