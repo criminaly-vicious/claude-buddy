@@ -7,3 +7,5 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+bridge-protocol = { path = "../bridge-protocol" }
+serde_json = "1"
