@@ -24,6 +24,7 @@ Like Wispr Flow, it runs from the system tray: open it, hide it, quit it. It mus
 
 | Doc | What it covers |
 | --- | --- |
+| [User guide](docs/user-guide.md) | Install, connect Claude Code, what buddies do, troubleshooting, FAQ |
 | [Vision](docs/vision.md) | Why this exists, principles, users |
 | [Scope](docs/scope.md) | MVP in/out, non-goals, success criteria |
 | [Architecture](docs/architecture.md) | Components, data flow, tech stack |
