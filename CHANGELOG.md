@@ -10,3 +10,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Project documentation, planning and governance
+- Windows installer (NSIS, per user, no admin) that ships `buddy-hook` next to the app; the uninstaller offers to remove the hooks from Claude Code's settings
