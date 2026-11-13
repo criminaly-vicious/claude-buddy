@@ -1,6 +1,6 @@
 {
   "name": "buddy-bridge",
-  "version": "1.0.0",
+  "version": "0.2.0",
   "description": "Connects Claude Code to the Claude Buddy desktop app: reports what each session is doing so its buddy shows it.",
   "author": {
     "name": "Claude Buddy contributors"

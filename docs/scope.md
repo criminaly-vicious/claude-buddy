@@ -34,7 +34,7 @@
 - Inter-buddy interactions (high-fives when two finish together, chatting).
 - macOS and Linux.
 - Claude desktop app sessions, if a stable signal exists.
-- Showing subagents as tiny helper buddies.
+- Showing subagents as tiny helper buddies: done, as mini Clawds stacked on their buddy (#84).
 
 ## Non-goals
 

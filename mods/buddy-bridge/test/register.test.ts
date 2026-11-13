@@ -15,6 +15,8 @@ function world(on: On, options: { hooks?: unknown; bridge?: string | null; fetch
   on('settings.read', () => ({ value: options.hooks === undefined ? {} : { hooks: options.hooks } }))
   // The engine's own classic chain, beneath the mod.
   on('classic.Stop', () => ({}))
+  on('classic.SubagentStart', () => ({}))
+  on('classic.SubagentStop', () => ({}))
   on('classic.SessionEnd', () => ({}))
   on('fs.read', () => {
     if (options.bridge === null) throw new Error('ENOENT')
@@ -69,6 +71,33 @@ test('reports a tool call from its envelope, with the target only', async ($, on
   expect(pre?.session_id).toBe(SESSION)
   expect(pre?.cwd).toBe('/home/me/demo')
   expect(sent.some(s => String(s.init?.body).includes('sk-123'))).toBe(false)
+})
+
+test('reports subagents starting and stopping, without their last message', async ($, on) => {
+  const { clock, sent } = world(on)
+  await $.classic.SubagentStart({
+    session_id: SESSION,
+    cwd: '/home/me/demo',
+    transcript_path: '/t.jsonl',
+    agent_id: 'a1',
+    agent_type: 'Explore',
+  })
+  await $.classic.SubagentStop({
+    session_id: SESSION,
+    cwd: '/home/me/demo',
+    transcript_path: '/t.jsonl',
+    stop_hook_active: false,
+    agent_id: 'a1',
+    agent_type: 'Explore',
+    agent_transcript_path: '/agent-a1.jsonl',
+    last_assistant_message: 'a secret answer',
+  })
+  await clock.settle()
+
+  const events = sent.map(body)
+  expect(events.map(b => b.event)).toEqual(['SubagentStart', 'SubagentStop'])
+  expect(events.every(b => b.agent_id === 'a1' && b.agent_type === 'Explore')).toBe(true)
+  expect(sent.some(s => String(s.init?.body).includes('secret'))).toBe(false)
 })
 
 test('stays quiet when the classic buddy-hook is installed', async ($, on) => {

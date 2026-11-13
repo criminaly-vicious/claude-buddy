@@ -83,6 +83,28 @@ describe('buildEvent', () => {
     expect(sub?.agent_id).toBe('a1')
   })
 
+  test('names a subagent by id and type, and never sends its last message', async () => {
+    const stop = buildEvent(
+      'SubagentStop',
+      {
+        session_id: SESSION,
+        cwd: '/d',
+        agent_id: 'a0000000000000001',
+        agent_type: 'Explore',
+        agent_transcript_path: '/home/me/.claude/projects/x/subagents/agent-a0000000000000001.jsonl',
+        last_assistant_message: 'the secret findings',
+      },
+      { at: 1 },
+    )
+    expect(stop?.agent_id).toBe('a0000000000000001')
+    expect(stop?.agent_type).toBe('Explore')
+    const json = JSON.stringify(stop)
+    expect(json.includes('secret')).toBe(false)
+    expect(json.includes('jsonl')).toBe(false)
+    const long = buildEvent('SubagentStart', { session_id: SESSION, cwd: '/d', agent_id: 'a1', agent_type: 't'.repeat(100) }, { at: 1 })
+    expect(long?.agent_type?.length).toBe(64)
+  })
+
   test('drops what the server would refuse', async () => {
     expect(buildEvent('Stop', { cwd: '/d' }, { at: 1 })).toBe(undefined)
     expect(buildEvent('PreToolUse', { session_id: SESSION, cwd: '/d' }, { at: 1 })).toBe(undefined)
@@ -106,6 +128,8 @@ describe('buildEvent', () => {
       'Notification',
       'PermissionRequest',
       'Stop',
+      'SubagentStart',
+      'SubagentStop',
       'SessionEnd',
     ])
   })

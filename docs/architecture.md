@@ -57,6 +57,15 @@ interface SessionView {
   since: number;           // epoch ms when state started
   source: "hooks" | "transcript";
   pid?: number;            // claude process, for focus + liveness
+  subagents?: SubagentView[]; // running subagents, oldest first
+}
+
+interface SubagentView {
+  id: string;              // hook agent_id
+  kind?: string;           // agent_type, e.g. "Explore"
+  tool?: string;           // its current or last tool
+  summary?: string;        // as SessionView.summary
+  since: number;           // epoch ms when it started
 }
 ```
 
@@ -161,10 +170,11 @@ Body: one event as a JSON object. Field names use the hook payload's own `snake_
 | `notification_type` | string | `Notification` | 32 chars | Hook `notification_type` |
 | `start_source` | string | `SessionStart` | 16 chars | Hook `source` (`startup`, `resume`, `clear`, `compact`, `fork`) |
 | `agent_id` | string | no | 64 chars | Hook `agent_id` when the event comes from a subagent |
+| `agent_type` | string | no | 64 chars | Hook `agent_type` (`Explore`, `general-purpose`, a custom agent's name). Added after 1.0.0; an older app ignores it |
 
 The whole body must be at most **16 KiB**. Strings are counted in Unicode scalar values. A client cuts any string over its limit before sending. The server rejects a request whose field exceeds its limit.
 
-**Never sent:** `prompt`, `tool_input` (except the `target` derived from it), `tool_response`, `last_assistant_message`, `message`, `title`, `transcript_path`, file contents, full commands, environment variables.
+**Never sent:** `prompt`, `tool_input` (except the `target` derived from it), `tool_response`, `last_assistant_message`, `message`, `title`, `transcript_path`, `agent_transcript_path`, file contents, full commands, environment variables.
 
 #### `target` rules
 
@@ -186,7 +196,7 @@ The whole body must be at most **16 KiB**. Strings are counted in Unicode scalar
 
 | Status | When |
 | --- | --- |
-| `204 No Content` | Event accepted (including recognised events the MVP ignores, e.g. `SubagentStart`) |
+| `204 No Content` | Event accepted (including recognised events the server ignores, e.g. a `SubagentStart` without `agent_id`) |
 | `202 Accepted` | Valid body with an `event` name the server does not know. Ignored, for forward compatibility |
 | `400 Bad Request` | Invalid JSON, missing required field, wrong type, or a field over its limit |
 | `401 Unauthorized` | Missing or wrong bearer token (compared in constant time) |
@@ -214,10 +224,10 @@ The bridge stamps each event with its own receive time and applies events in arr
 | `Notification` with another type | Ignored (`204`) |
 | `PermissionRequest` | `NeedsInput` |
 | `Stop` | `TurnEnded` |
-| `SubagentStart`, `SubagentStop` | Ignored for the MVP (`204`) |
+| `SubagentStart`, `SubagentStop` with `agent_id` | `SubagentStarted`, `SubagentStopped` (without `agent_id`: ignored, `204`) |
 | `SessionEnd` | `SessionEnded` |
 
-`claude_pid` becomes the registry's `pid`; `cwd` is passed through. Events inside a subagent (`agent_id` set) count toward the parent session.
+`claude_pid` becomes the registry's `pid`; `cwd` is passed through. `agent_id` and `agent_type` become the event's `agent`: events from inside a subagent update that subagent, not the parent buddy ([subagents](session-detection.md#subagents)).
 
 ## Tech stack
 
