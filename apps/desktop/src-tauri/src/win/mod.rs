@@ -1,7 +1,7 @@
 //! The overlay window: transparent, always on top, out of the taskbar and
 //! Alt+Tab, never focused, anchored to a corner of a monitor's work area, and
 //! click-through except over the regions the frontend registers (buddies,
-//! hover card). Decisions: ADR-0011. Geometry and hit-testing are pure and
+//! hover balloon). Decisions: ADR-0011. Geometry and hit-testing are pure and
 //! tested everywhere; the Win32 parts live in `win32.rs`.
 
 pub mod autostart;
@@ -21,8 +21,8 @@ use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager, Monitor, PhysicalPosition, PhysicalSize, WebviewWindow};
 
-pub use geometry::{Corner, LogicalRect, Rect};
-use hit::HitTester;
+pub use geometry::{Corner, ExpandMode, LogicalRect, Rect};
+use hit::{HitTester, PointerChange};
 
 /// Label of the overlay window in `tauri.conf.json`.
 pub const OVERLAY_LABEL: &str = "overlay";
@@ -30,10 +30,30 @@ pub const OVERLAY_LABEL: &str = "overlay";
 const DEFAULT_SIZE: (f64, f64) = (480.0, 160.0);
 /// Event carrying the new [`Anchor`] whenever it changes.
 pub const EVENT_ANCHOR: &str = "overlay:anchor";
-/// Event carrying `true` when the pointer enters a registered region and
-/// `false` when it leaves them all. Once click-through, the page itself no
-/// longer sees the mouse, so this is how it learns the pointer left.
+/// Event carrying a [`PointerEvent`] when the pointer enters a registered
+/// region and when it leaves them all. Once click-through, the page itself
+/// no longer sees the mouse, so this is how it learns the pointer left; on
+/// entering, it also learns where the pointer is before its first own event.
 pub const EVENT_POINTER: &str = "overlay:pointer";
+
+/// Payload of [`EVENT_POINTER`]; `x` and `y` are logical pixels relative to
+/// the overlay.
+#[derive(Clone, Copy, Debug, Serialize)]
+pub struct PointerEvent {
+    pub inside: bool,
+    pub x: Option<f64>,
+    pub y: Option<f64>,
+}
+
+impl From<PointerChange> for PointerEvent {
+    fn from(change: PointerChange) -> Self {
+        Self {
+            inside: change.interactive,
+            x: change.at.map(|(x, _)| x),
+            y: change.at.map(|(_, y)| y),
+        }
+    }
+}
 /// Event carrying `false` when the buddies are hidden from the tray and
 /// `true` when shown again. Hidden, the page draws nothing at all.
 pub const EVENT_VISIBLE: &str = "overlay:visible";
@@ -64,7 +84,10 @@ pub struct Overlay {
     anchor: Mutex<Anchor>,
     /// Logical size the buddies need, from the frontend's layout (#21).
     content_size: Mutex<(f64, f64)>,
-    expanded: AtomicBool,
+    expanded: Mutex<Option<ExpandMode>>,
+    /// Anchored corner on screen and scale at the last placement: when they
+    /// change, the buddies moved on screen (see `HitTester::set_geometry`).
+    placed_at: Mutex<Option<((i32, i32), f64)>>,
     visible: AtomicBool,
     tester: &'static Mutex<HitTester>,
 }
@@ -79,20 +102,20 @@ impl Overlay {
 
         // Click-through changes are applied off the hook thread, so the hook
         // never waits on the main thread.
-        let (toggle_tx, toggle_rx) = mpsc::channel::<bool>();
+        let (toggle_tx, toggle_rx) = mpsc::channel::<PointerChange>();
         let applier = window.clone();
         std::thread::Builder::new()
             .name("overlay-click-through".into())
             .spawn(move || {
-                for interactive in toggle_rx {
-                    set_click_through(&applier, !interactive);
-                    let _ = applier.emit(EVENT_POINTER, interactive);
+                for change in toggle_rx {
+                    set_click_through(&applier, !change.interactive);
+                    let _ = applier.emit(EVENT_POINTER, PointerEvent::from(change));
                 }
             })?;
         // Lives for the whole process: the mouse hook holds a reference to it.
         let tester: &'static Mutex<HitTester> = Box::leak(Box::new(Mutex::new(HitTester::new(
-            Box::new(move |interactive| {
-                let _ = toggle_tx.send(interactive);
+            Box::new(move |change| {
+                let _ = toggle_tx.send(change);
             }),
         ))));
 
@@ -101,7 +124,8 @@ impl Overlay {
             window,
             anchor: Mutex::new(Anchor::default()),
             content_size: Mutex::new(DEFAULT_SIZE),
-            expanded: AtomicBool::new(false),
+            expanded: Mutex::new(None),
+            placed_at: Mutex::new(None),
             visible: AtomicBool::new(true),
             tester,
         });
@@ -150,16 +174,17 @@ impl Overlay {
         self.place().map(|_| ())
     }
 
-    /// Grows the overlay to cover its monitor's work area while a buddy is
-    /// dragged or thrown (#24). Returns where the anchored area lies inside it.
-    pub fn expand(&self) -> tauri::Result<Option<ExpandedLayout>> {
-        self.expanded.store(true, Ordering::SeqCst);
+    /// Grows the overlay while buddies leave their corner: to the whole work
+    /// area for a throw (#24), or to a strip along the floor for a stroll.
+    /// Returns where the anchored area lies inside it.
+    pub fn expand(&self, mode: ExpandMode) -> tauri::Result<Option<ExpandedLayout>> {
+        *lock(&self.expanded) = Some(mode);
         self.place()
     }
 
     /// Back to the anchored size and position.
     pub fn restore(&self) -> tauri::Result<()> {
-        self.expanded.store(false, Ordering::SeqCst);
+        *lock(&self.expanded) = None;
         self.place().map(|_| ())
     }
 
@@ -200,22 +225,30 @@ impl Overlay {
             height: work.size.height,
         };
         let size = *lock(&self.content_size);
-        let home = geometry::anchor(work, size, scale, self.anchor().corner, MARGIN);
-        let (rect, layout) = if self.expanded.load(Ordering::SeqCst) {
-            let layout = ExpandedLayout {
-                width: f64::from(work.width) / scale,
-                height: f64::from(work.height) / scale,
-                home: geometry::inner_rect(work, home, scale),
-            };
-            (work, Some(layout))
-        } else {
-            (home, None)
+        let corner = self.anchor().corner;
+        let home = geometry::anchor(work, size, scale, corner, MARGIN);
+        let expanded = *lock(&self.expanded);
+        let (rect, layout) = match expanded {
+            Some(mode) => {
+                let outer = geometry::expanded_rect(work, home, mode);
+                let layout = ExpandedLayout {
+                    width: f64::from(outer.width) / scale,
+                    height: f64::from(outer.height) / scale,
+                    home: geometry::inner_rect(outer, home, scale),
+                };
+                (outer, Some(layout))
+            }
+            None => (home, None),
         };
         self.window
             .set_size(PhysicalSize::new(rect.width, rect.height))?;
         self.window
             .set_position(PhysicalPosition::new(rect.x, rect.y))?;
-        lock(self.tester).set_geometry((rect.x, rect.y), scale);
+        // Growing or shrinking around the corner leaves the buddies where
+        // they are on screen; anything else moved them.
+        let placed = (geometry::anchor_point(home, corner), scale);
+        let moved = lock(&self.placed_at).replace(placed) != Some(placed);
+        lock(self.tester).set_geometry((rect.x, rect.y), scale, moved);
         Ok(layout)
     }
 
@@ -273,12 +306,16 @@ pub fn set_hit_regions(overlay: tauri::State<'_, Arc<Overlay>>, regions: Vec<Log
     overlay.set_hit_regions(regions);
 }
 
-/// Frontend: a buddy is grabbed. `null` when no monitor is known.
+/// Frontend: a buddy leaves its corner (`"work"` for a throw, `"floor"` for
+/// a stroll; work when omitted). `null` when no monitor is known.
 #[tauri::command]
 pub fn overlay_expand(
     overlay: tauri::State<'_, Arc<Overlay>>,
+    mode: Option<ExpandMode>,
 ) -> Result<Option<ExpandedLayout>, String> {
-    overlay.expand().map_err(|e| e.to_string())
+    overlay
+        .expand(mode.unwrap_or(ExpandMode::Work))
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

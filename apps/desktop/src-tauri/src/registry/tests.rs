@@ -32,6 +32,7 @@ fn tool(name: &str) -> EventKind {
     EventKind::ToolStarted {
         tool: name.to_string(),
         summary: None,
+        target: None,
     }
 }
 
@@ -277,6 +278,7 @@ fn summary_is_capped_at_80_chars() {
         EventKind::ToolStarted {
             tool: "Bash".into(),
             summary: Some("x".repeat(200)),
+            target: None,
         },
     ));
     let summary = registry.snapshot()[0].summary.clone().unwrap();
@@ -331,6 +333,7 @@ fn from_hook_fixture(name: &str, at: Millis) -> RegistryEvent {
         "PreToolUse" => EventKind::ToolStarted {
             tool: tool(),
             summary: None,
+            target: None,
         },
         "PostToolUse" => EventKind::ToolFinished { tool: tool() },
         "Notification" => EventKind::NeedsInput,
@@ -440,4 +443,124 @@ fn hook_sessions_do_not_expire_on_silence() {
     let mut registry = idle_registry();
     registry.tick(10_000_000);
     assert_eq!(state(&registry), BuddyState::Sleeping);
+}
+
+// --- Sessions talking to each other ---------------------------------------
+
+const ALICE: &str = "aaaaaaaa-1111-4111-8111-111111111111";
+const BOB: &str = "bbbbbbbb-2222-4222-8222-222222222222";
+const CAROL: &str = "cccccccc-3333-4333-8333-333333333333";
+
+fn event_for(id: &str, project: &str, at: Millis, kind: EventKind) -> RegistryEvent {
+    RegistryEvent {
+        session_id: id.to_string(),
+        source: Source::Hooks,
+        at,
+        cwd: Some(format!("/home/user/{project}")),
+        pid: None,
+        kind,
+    }
+}
+
+fn send_message(to: Option<&str>) -> EventKind {
+    EventKind::ToolStarted {
+        tool: "SendMessage".into(),
+        summary: Some("SendMessage".into()),
+        target: to.map(str::to_string),
+    }
+}
+
+/// Registry with Alice (api), Bob (web) and, optionally, Carol (docs).
+fn chatty(with_carol: bool) -> Registry {
+    let mut registry = Registry::new(config());
+    registry.apply(event_for(ALICE, "api", 0, EventKind::SessionStarted));
+    registry.apply(event_for(BOB, "web", 0, EventKind::SessionStarted));
+    if with_carol {
+        registry.apply(event_for(CAROL, "docs", 0, EventKind::SessionStarted));
+    }
+    registry.tick(1_000);
+    registry
+}
+
+fn interactions(changes: &[Change]) -> Vec<Interaction> {
+    changes
+        .iter()
+        .filter_map(|c| match c {
+            Change::Interaction(i) => Some(i.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+fn talk(from: &str, to: Option<&str>) -> Interaction {
+    Interaction {
+        from: from.to_string(),
+        to: to.map(str::to_string),
+    }
+}
+
+#[test]
+fn a_message_to_a_known_session_pairs_at_once() {
+    let mut registry = chatty(true);
+    // By id, by the start of the id, and by project name.
+    for (name, to) in [(BOB, BOB), ("cccccccc-3333", CAROL), ("WEB", BOB)] {
+        let changes = registry.apply(event_for(ALICE, "api", 2_000, send_message(Some(name))));
+        assert_eq!(interactions(&changes), [talk(ALICE, Some(to))], "{name}");
+    }
+    assert!(registry.messages.is_empty(), "nothing left waiting");
+}
+
+#[test]
+fn the_session_that_gets_a_prompt_next_is_the_recipient() {
+    let mut registry = chatty(true);
+    let sent = registry.apply(event_for(ALICE, "api", 2_000, send_message(Some("helper"))));
+    assert!(interactions(&sent).is_empty(), "waits for the recipient");
+    assert_eq!(registry.next_deadline(), Some(2_000 + MESSAGE_WINDOW_MS));
+    // A prompt in the sender itself proves nothing.
+    let own = registry.apply(event_for(ALICE, "api", 2_500, EventKind::PromptSubmitted));
+    assert!(interactions(&own).is_empty());
+    let got = registry.apply(event_for(CAROL, "docs", 3_000, EventKind::PromptSubmitted));
+    assert_eq!(interactions(&got), [talk(ALICE, Some(CAROL))]);
+    assert!(
+        interactions(&registry.tick(10_000)).is_empty(),
+        "settled once"
+    );
+}
+
+#[test]
+fn with_one_other_session_it_is_the_recipient() {
+    let mut registry = chatty(false);
+    registry.apply(event_for(ALICE, "api", 2_000, send_message(Some("helper"))));
+    assert_eq!(registry.next_deadline(), Some(2_000 + LONE_PAIR_MS));
+    assert!(interactions(&registry.tick(2_000 + LONE_PAIR_MS - 1)).is_empty());
+    assert_eq!(
+        interactions(&registry.tick(2_000 + LONE_PAIR_MS)),
+        [talk(ALICE, Some(BOB))]
+    );
+}
+
+#[test]
+fn an_unpaired_message_is_reported_without_a_recipient() {
+    let mut registry = chatty(true);
+    registry.apply(event_for(ALICE, "api", 2_000, send_message(None)));
+    // Too late for a prompt to count.
+    let late = registry.apply(event_for(
+        BOB,
+        "web",
+        2_000 + MESSAGE_WINDOW_MS + 1,
+        EventKind::PromptSubmitted,
+    ));
+    assert!(interactions(&late).is_empty());
+    assert_eq!(
+        interactions(&registry.tick(2_000 + MESSAGE_WINDOW_MS + 1)),
+        [talk(ALICE, None)]
+    );
+}
+
+#[test]
+fn ordinary_tools_are_not_messages() {
+    let mut registry = chatty(false);
+    let changes = registry.apply(event_for(ALICE, "api", 2_000, tool("Read")));
+    assert!(interactions(&changes).is_empty());
+    assert!(registry.messages.is_empty());
 }

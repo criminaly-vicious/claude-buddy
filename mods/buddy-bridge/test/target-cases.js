@@ -5,6 +5,39 @@
 // `target: null` means no target is sent.
 export default [
   {
+    "tool": "SendMessage",
+    "input": {
+      "to": "researcher",
+      "message": "here is the secret plan"
+    },
+    "target": "researcher",
+    "note": "the recipient, never the message"
+  },
+  {
+    "tool": "mcp__claude-code-remote__send_message",
+    "input": {
+      "session_id": "session_01ABC",
+      "message": "hi"
+    },
+    "target": "session_01ABC",
+    "note": "MCP messaging tool"
+  },
+  {
+    "tool": "SendMessage",
+    "input": {
+      "message": "no recipient"
+    },
+    "target": null
+  },
+  {
+    "tool": "mcp__chat__send_messages",
+    "input": {
+      "to": "someone"
+    },
+    "target": null,
+    "note": "not a send_message tool"
+  },
+  {
     "tool": "Read",
     "input": {
       "file_path": "/home/me/src/app.ts"

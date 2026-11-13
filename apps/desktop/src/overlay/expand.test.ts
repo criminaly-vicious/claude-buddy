@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { flightArea, homeArea } from "./expand";
+import { activeLayout, flightArea, homeArea } from "./expand";
 
 const layout = { width: 1920, height: 1032, home: { x: 1432, y: 864, width: 480, height: 160 } };
 
@@ -24,5 +24,13 @@ describe("expanded overlay", () => {
     });
     // Browser mock: no backend, the page is the work area.
     expect(flightArea({ width: 800, height: 600 }, null)).toEqual({ left: 0, top: 0, right: 800, bottom: 600 });
+  });
+});
+
+describe("activeLayout", () => {
+  it("is the layout only while the canvas has its size", () => {
+    expect(activeLayout({ width: 1920, height: 1032 }, layout)).toBe(layout);
+    expect(activeLayout({ width: 480, height: 160 }, layout)).toBeNull();
+    expect(activeLayout({ width: 1920, height: 1032 }, null)).toBeNull();
   });
 });

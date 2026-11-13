@@ -18,15 +18,18 @@ First release: an animated buddy in the corner of your screen for every Claude C
 - **Works without hooks too.** Sessions without hooks still get a buddy, with approximate states read from Claude Code's transcripts (#46).
 - **Poses for every state.** Buddies type on a laptop while working, read a sheet of paper while researching, wave with a `!` when a session waits for you, idle around, and fall asleep after a while (#50, #51).
 - **Tidy group.** Buddies stand side by side in a corner and keep their place. A buddy that waits for you steps forward, and with more than 10 sessions the extras collapse into a `+N` chip that expands on hover (#49, #52).
-- **Hover card.** Hover a buddy to see its project, what it is doing, the current tool and for how long (#55).
+- **Hover balloon.** Hover a buddy for a pixel-art speech balloon that says what its session is doing in plain words ("Editing app.ts", "Running pnpm", "Waiting for you"), with the project and for how long (#55, #76).
 - **Click to focus.** Click a buddy to bring its session's terminal window to the front; it hops when that worked (#56).
 - **Drag and throw.** Grab a buddy and throw it: it bounces off the screen edges, lands (sometimes dizzy) and walks back to its place (#57).
+- **Buddies go for walks.** Now and then an idle buddy strolls along the bottom of the screen, looks around and walks back to its place: one at a time, with a quiet minute or so between strolls. It hurries back when its session gets work (#77).
+- **Sessions chat.** When one Claude Code session messages another, its buddy walks over to the other one and they chat with speech bubbles before it walks back. Claude Buddy only looks at who a message is for, never at what it says (#78).
 - **Tray menu.** Show or hide the buddies, install, repair or remove the Claude Code hooks, open Settings, and quit. Installing the hooks shows a summary first, keeps a backup of your Claude Code settings, and checks the connection afterwards. Starting Claude Buddy again just shows the copy already running (#48, #59).
 - **Settings.** Choose the corner and monitor, the buddy size (1×, 2×, 3×), when idle buddies fall asleep, and reduce motion, and see whether the hooks are working. Changes apply right away (#60).
 - **Start with Windows and a hotkey.** Optionally start Claude Buddy when you sign in, and show or hide the buddies from anywhere with `Ctrl+Alt+B` or a hotkey of your choice (#62).
 - **Claude Code mod.** Connect Claude Code with one line, `/plugin install buddy-bridge --marketplace criminaly-vicious/claude-buddy`, without touching your Claude Code settings. The classic hooks from the tray remain as an alternative, and the two never report the same session twice (#70).
 - **Installer.** A small per-user installer that needs no admin rights. Uninstalling offers to remove the hooks from your Claude Code settings and removes the start-with-Windows entry (#63).
-- **Clawd.** The buddy is Clawd, drawn pixel by pixel, with an animation for every state and interaction: popping in, idling, typing, reading, waving, sleeping, walking, being thrown, landing, getting dizzy and waving goodbye. The app and installer icons show him too (#19).
+- **Clawd.** The buddy is Clawd, drawn pixel by pixel, with an animation for every state and interaction: popping in, idling, typing, reading, waving, sleeping, walking, being thrown, landing, getting dizzy and waving goodbye. He breathes and blinks out of step with the others, and pops in and out in a puff. The app and installer icons show him too (#19, #79).
+- **Light.** Resting buddies share one animation clock and redraw only when their picture changes, so a whole group redraws at most 8 times a second however many buddies there are. Walking and flying redraw faster, and only while they last (#30, #79).
 - **User guide** covering installation, the hooks, every pose, troubleshooting and privacy (#61).
 
 ### Known limitations

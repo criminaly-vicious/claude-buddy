@@ -118,6 +118,13 @@ export function buildEvent(
 export function deriveTarget(tool: string, input: Payload): string | undefined {
   const field = (name: string) => text(input, name)
   let target: string | undefined
+  if (isMessageTool(tool)) {
+    // Who the message is for, never what it says.
+    target = field('to') ?? field('recipient') ?? field('session_id')
+    if (target === undefined) return undefined
+    const cut = truncate(trimRust(target), LIMITS.target)
+    return cut === '' ? undefined : cut
+  }
   switch (tool) {
     case 'Read':
     case 'Edit':
@@ -152,6 +159,17 @@ export function deriveTarget(tool: string, input: Payload): string | undefined {
   if (target === undefined) return undefined
   const cut = truncate(trimRust(target), LIMITS.target)
   return cut === '' ? undefined : cut
+}
+
+/**
+ * Tools one session uses to message another: Claude Code's `SendMessage` and
+ * MCP tools named `send_message`, as `bridge_protocol::target::is_message_tool`.
+ */
+export function isMessageTool(tool: string): boolean {
+  if (tool === 'SendMessage') return true
+  if (!tool.startsWith('mcp__')) return false
+  const name = tool.slice('mcp__'.length).split('__').pop() ?? ''
+  return name.toLowerCase() === 'send_message'
 }
 
 const mapDefined = <T>(value: T | undefined, fn: (v: T) => string | undefined) =>

@@ -1,29 +1,70 @@
 /**
  * What is on screen: one buddy per session, the frame its animation
  * controller shows now, where it stands in the group layout, the `+N` chip,
- * and the hit regions. Buddies whose slot moves walk there (`walk` clip).
- * Pure (time is passed in), so it is tested without a canvas.
+ * the speech bubbles over it, and the hit regions. Buddies whose slot moves
+ * walk there (`walk` clip); buddies on an excursion (thrown, strolling,
+ * visiting another buddy) are drawn wherever the excursion puts them.
+ * Pure (time and randomness are passed in), so it is tested without a canvas.
  */
 
 import { Atlas, Clip, Frame, frameAt } from "../sprites/atlas";
 import type { SessionView } from "../types";
 import { AnimationController, ControllerOptions } from "./controller";
+import { Excursion, Room, Stroll, Visit } from "./excursion";
 import { FloorPosition, layout, toCanvas } from "./layout";
 import type { Corner, HitRegion } from "./native";
 import { Bounds, Point, Throw, ThrowClips } from "./throw";
 
 /** Sprite frame size in the atlas, in sprite pixels. */
 export const SPRITE_SIZE = 32;
+/**
+ * The part of a 32×32 frame that is Clawd (arms up included), in sprite
+ * pixels: hit regions and the hover balloon use it, so the empty air above
+ * him stays click-through.
+ */
+export const BODY_BOX = { x: 2, y: 10, width: 28, height: 21 };
 /** Gap between buddies and the waiting step, in sprite pixels (spec: 4 px). */
 const GAP = 4;
 const STEP = 4;
-/** Walking speed, in sprite pixels per second. */
+/** Walking speed back to a slot, in sprite pixels per second. */
 const WALK_SPEED = 64;
-/** Redraw interval while something moves (the loop caps at 30 fps anyway). */
+/** Strolls and visits are a little slower, in sprite pixels per second. */
+const STROLL_SPEED = 40;
+/** Redraw interval while something flies or hops (the loop caps at 30 fps anyway). */
 const MOVE_FRAME_MS = 1000 / 30;
+/** Redraw interval while buddies walk: 20 fps is plenty for pixel art at walking pace. */
+const WALK_FRAME_MS = 1000 / 20;
 /** The happy hop after a click (#23): how long and how high, in sprite pixels. */
 export const HOP_MS = 320;
 const HOP_HEIGHT = 6;
+/** How long two buddies talk on a visit, and a lone speech bubble lasts. */
+export const TALK_MS = 2600;
+/** The other buddy answers this long after the talking starts. */
+const REPLY_AFTER_MS = 900;
+
+/** When idle buddies go for a stroll, in ms: the first one, then the next ones. */
+export interface StrollTiming {
+  first: [number, number];
+  every: [number, number];
+  /** How far they walk, in sprite pixels. */
+  distance: [number, number];
+  /** How long they look around before walking back. */
+  pause: [number, number];
+  /** Quiet time after any stroll before the next one, whoever goes. */
+  gap: [number, number];
+}
+
+export const DEFAULT_STROLLS: StrollTiming = {
+  first: [30_000, 90_000],
+  every: [60_000, 180_000],
+  distance: [40, 120],
+  pause: [1_200, 2_800],
+  gap: [45_000, 90_000],
+};
+
+export interface SceneOptions extends Omit<ControllerOptions, "clips"> {
+  strolls?: StrollTiming;
+}
 
 export interface Viewport {
   /** Canvas size in device pixels. */
@@ -35,7 +76,7 @@ export interface Viewport {
   scale: number;
   /**
    * Where the group's corner area lies on the canvas, in device pixels.
-   * The whole canvas unless the overlay is expanded for a throw.
+   * The whole canvas unless the overlay is expanded.
    */
   home?: { x: number; y: number; width: number; height: number };
 }
@@ -57,9 +98,18 @@ export interface PlacedSprite {
   size: number;
   /**
    * Vertical drawing offset of a hop, in whole device pixels. `x`, `y` and
-   * the hit region stay at the buddy's place, so the card does not bounce.
+   * the hit region stay at the buddy's place, so the balloon does not bounce.
    */
   hop: number;
+}
+
+/** A bubble drawn over a buddy (same cell as its sprite), with no hit region. */
+export interface PlacedEffect {
+  id: string;
+  frame: Frame;
+  x: number;
+  y: number;
+  size: number;
 }
 
 export interface PlacedChip {
@@ -71,18 +121,28 @@ export interface PlacedChip {
 
 export interface SceneFrame {
   sprites: PlacedSprite[];
+  effects: PlacedEffect[];
   chip: PlacedChip | null;
   regions: HitRegion[];
   /** Space the group needs, in CSS pixels, so the window can fit it. */
   contentSize: { width: number; height: number };
   /** When the picture next changes (same clock as `now`), or `null` if static. */
   nextChangeAt: number | null;
+  /** Device pixels per sprite pixel. */
+  pixel: number;
 }
 
 interface Walk {
   from: number;
   to: number;
   startedAt: number;
+}
+
+/** A bubble shown over a buddy for a while. */
+interface Effect {
+  clip: Clip;
+  from: number;
+  until: number;
 }
 
 interface Buddy {
@@ -93,6 +153,35 @@ interface Buddy {
   walk: Walk | null;
   /** When the last hop started. */
   hopAt: number | null;
+  /** When this buddy may go for its next stroll; `null` until scheduled. */
+  strollAt: number | null;
+}
+
+/** A stable 0..1 number for a session id: its buddy's place in its animation loops. */
+export function phaseOf(id: string): number {
+  let hash = 2166136261;
+  for (let i = 0; i < id.length; i++) {
+    hash ^= id.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0) / 4294967296;
+}
+
+/** A throw seen as an excursion; the scene still drags and releases it. */
+class Thrown implements Excursion {
+  readonly room: Room = "work";
+  constructor(readonly flight: Throw) {}
+  update(now: number, slot: Point) {
+    const shown = this.flight.update(now, slot);
+    return { x: shown.x, y: shown.y, frame: shown.frame, done: shown.phase === "done" };
+  }
+}
+
+/** A visit and who it is for. */
+interface Visiting {
+  visit: Visit;
+  to: string;
+  replied: boolean;
 }
 
 export class Scene {
@@ -105,29 +194,46 @@ export class Scene {
   private layoutChangedAt = 0;
   private readonly walkClip: Clip;
   private readonly throwClips: ThrowClips;
-  /** Buddies being dragged or thrown, until they are back in their slot. */
-  private throws = new Map<string, Throw>();
+  private readonly clips: {
+    walkLeft: Clip;
+    walkRight: Clip;
+    look: Clip;
+    talk: Clip;
+    standUp: Clip;
+    fxTalk: Clip;
+    fxReply: Clip;
+  };
+  /** Buddies away from their slot (thrown, strolling, visiting), until they are back. */
+  private away = new Map<string, Excursion>();
+  private visits = new Map<string, Visiting>();
+  private effects = new Map<string, Effect[]>();
   private grabbed: string | null = null;
-  /** Where thrown buddies may fly: the work area, relative to home (CSS px). */
+  private hovered: string | null = null;
+  /** Where buddies may go: the expanded overlay, relative to home (CSS px). */
   private workArea: Area | null = null;
-  /** Last drawn place of each buddy (home-relative CSS px), and the sprite size there. */
+  /** Last drawn place of each buddy (home-relative CSS px). */
   private placed = new Map<string, Point>();
+  /** Last slot of each buddy (home-relative CSS px). */
+  private slots = new Map<string, Point>();
   private spriteCss = SPRITE_SIZE;
+  private scaleCss = 1;
   private homeCss = { width: 0, height: 0 };
-  private walkSpeedCss = WALK_SPEED;
+  private readonly random: () => number;
+  private readonly strolls: StrollTiming;
+  /** No stroll starts before this, so a big group is not always on the move. */
+  private nextStrollAnyAt = 0;
 
   constructor(
     private readonly atlas: Atlas,
-    private options: Omit<ControllerOptions, "clips"> = {},
+    private options: SceneOptions = {},
   ) {
-    const walk = atlas.clips.get("walk");
-    if (!walk) throw new Error('atlas has no "walk" animation');
-    this.walkClip = walk;
     const clip = (name: string) => {
       const found = atlas.clips.get(name);
       if (!found) throw new Error(`atlas has no "${name}" animation`);
       return found;
     };
+    const walk = clip("walk");
+    this.walkClip = walk;
     this.throwClips = {
       grabbed: clip("grabbed"),
       fly: clip("fly"),
@@ -136,43 +242,77 @@ export class Scene {
       dizzy: clip("dizzy"),
       walk,
     };
+    this.clips = {
+      walkLeft: clip("walk_left"),
+      walkRight: clip("walk_right"),
+      look: clip("idle_look"),
+      talk: clip("talk"),
+      standUp: clip("stand_up"),
+      fxTalk: clip("fx_talk"),
+      fxReply: clip("fx_reply"),
+    };
+    this.random = options.random ?? Math.random;
+    this.strolls = options.strolls ?? DEFAULT_STROLLS;
   }
 
-  /** Settings: random idle extras off or on, for every buddy now and later. */
+  /** Settings: random idle extras and strolls off or on, for every buddy now and later. */
   setReduceMotion(on: boolean, now: number): void {
     this.options = { ...this.options, reduceMotion: on };
     for (const buddy of this.buddies.values()) buddy.animation.setReduceMotion(on, now);
   }
 
-  /** Whether any buddy is held, flying, landing or walking back from a throw. */
+  /** Whether any buddy is held, flying or on its way back from a throw. */
   get busy(): boolean {
-    return this.throws.size > 0;
+    return [...this.away.values()].some((e) => e instanceof Thrown);
+  }
+
+  /**
+   * How much the overlay must grow: the work area while someone is thrown,
+   * a floor strip while someone strolls, nothing otherwise.
+   */
+  roomNeeded(): "work" | "floor" | null {
+    let need: "work" | "floor" | null = null;
+    for (const e of this.away.values()) {
+      if (e.room === "work") return "work";
+      if (e.room === "floor") need = "floor";
+    }
+    return need;
   }
 
   isThrown(id: string): boolean {
-    return this.throws.has(id);
+    return this.away.get(id) instanceof Thrown;
   }
 
-  /** The area thrown buddies bounce in (the expanded overlay), home-relative CSS px. */
+  /** The buddy under the pointer: it never wanders off while you look at it. */
+  setHovered(id: string | null): void {
+    this.hovered = id;
+  }
+
+  /** The area buddies may go (the expanded overlay), home-relative CSS px. */
   setWorkArea(area: Area): void {
     this.workArea = area;
-    for (const t of this.throws.values()) t.setBounds(this.bounds());
+    for (const e of this.away.values()) {
+      if (e instanceof Thrown) e.flight.setBounds(this.bounds());
+    }
   }
 
   /**
    * Picks up buddy `id` at `pointer` (home-relative CSS px). Works on a
-   * buddy in mid-air too. Returns whether there was a buddy to grab.
+   * buddy in mid-air or on a walk too. Returns whether there was a buddy to grab.
    */
   grab(id: string, pointer: Point, now: number): boolean {
-    const at = this.throws.get(id)?.update(now, pointer) ?? this.placed.get(id);
+    const at = this.placed.get(id);
     if (!at || !this.buddies.has(id)) return false;
-    this.throws.set(
+    this.visits.delete(id);
+    this.away.set(
       id,
-      new Throw({ x: at.x, y: at.y }, pointer, now, {
-        clips: this.throwClips,
-        bounds: this.bounds(),
-        walkSpeed: this.walkSpeedCss,
-      }),
+      new Thrown(
+        new Throw({ x: at.x, y: at.y }, pointer, now, {
+          clips: this.throwClips,
+          bounds: this.bounds(),
+          walkSpeed: WALK_SPEED * this.scaleCss,
+        }),
+      ),
     );
     this.grabbed = id;
     return true;
@@ -180,13 +320,53 @@ export class Scene {
 
   /** The held buddy follows the pointer (home-relative CSS px). */
   drag(pointer: Point, now: number): void {
-    if (this.grabbed) this.throws.get(this.grabbed)?.drag(pointer, now);
+    const held = this.grabbed ? this.away.get(this.grabbed) : undefined;
+    if (held instanceof Thrown) held.flight.drag(pointer, now);
   }
 
   /** Lets go of the held buddy. */
   release(now: number): void {
-    if (this.grabbed) this.throws.get(this.grabbed)?.release(now);
+    const held = this.grabbed ? this.away.get(this.grabbed) : undefined;
+    if (held instanceof Thrown) held.flight.release(now);
     this.grabbed = null;
+  }
+
+  /**
+   * Session `from` messaged session `to` (`null`: someone the app could not
+   * tell). Its buddy walks over and they talk; when that cannot be shown
+   * (someone is away, hidden, or reduce motion is on), a speech bubble over
+   * the sender (and an answer over the recipient) says it instead.
+   */
+  interact(from: string, to: string | null, now: number): void {
+    const sender = this.buddies.get(from);
+    if (!sender) return;
+    const recipient = to !== null && to !== from ? this.buddies.get(to) : undefined;
+    const canWalk =
+      recipient !== undefined &&
+      to !== null &&
+      !this.options.reduceMotion &&
+      !this.away.has(from) &&
+      !this.away.has(to) &&
+      this.placed.has(from) &&
+      this.slots.has(from) &&
+      this.slots.has(to) &&
+      sender.view.state !== "leaving" &&
+      recipient.view.state !== "leaving";
+    if (!canWalk) {
+      this.addEffect(from, this.clips.fxTalk, now, now + TALK_MS);
+      if (recipient && to !== null) {
+        this.addEffect(to, this.clips.fxReply, now + REPLY_AFTER_MS, now + TALK_MS);
+      }
+      return;
+    }
+    const sitting = sender.animation.posture(now) === "sitting";
+    const visit = new Visit(this.placed.get(from) as Point, now, {
+      clips: { ...this.clips, standUp: sitting ? this.clips.standUp : null },
+      speed: STROLL_SPEED * this.scaleCss,
+      talkMs: TALK_MS,
+    });
+    this.away.set(from, visit);
+    this.visits.set(from, { visit, to, replied: false });
   }
 
   /** Where a sprite's corner may go: the work area minus the sprite (or the home area). */
@@ -209,7 +389,7 @@ export class Scene {
     return this.buddies.size;
   }
 
-  /** The session behind a buddy, for the hover card. */
+  /** The session behind a buddy, for the hover balloon. */
   view(id: string): SessionView | undefined {
     return this.buddies.get(id)?.view;
   }
@@ -248,6 +428,9 @@ export class Scene {
     if (existing) {
       existing.view = view;
       existing.animation.setState(view.state, now);
+      // Called away while strolling: walk back to the desk now.
+      const out = this.away.get(view.id);
+      if (view.state !== "idle" && out instanceof Stroll) out.recall(now);
       return;
     }
     this.buddies.set(view.id, {
@@ -255,10 +438,12 @@ export class Scene {
       animation: new AnimationController(view.state, now, {
         ...this.options,
         clips: this.atlas.clips,
+        phase: phaseOf(view.id),
       }),
       offset: null,
       walk: null,
       hopAt: null,
+      strollAt: null,
     });
   }
 
@@ -271,9 +456,20 @@ export class Scene {
   /** A session is gone (`sessions:remove`); the buddies behind it walk up. */
   remove(id: string, now: number): void {
     if (this.buddies.delete(id)) this.layoutChangedAt = now;
-    this.throws.delete(id);
+    this.away.delete(id);
+    this.visits.delete(id);
+    this.effects.delete(id);
     this.placed.delete(id);
+    this.slots.delete(id);
     if (this.grabbed === id) this.grabbed = null;
+    if (this.hovered === id) this.hovered = null;
+  }
+
+  /** Shows `clip` over buddy `id` from `from` until `until`; it replaces a bubble it would overlap. */
+  private addEffect(id: string, clip: Clip, from: number, until: number): void {
+    const list = (this.effects.get(id) ?? []).filter((e) => e.until <= from || e.from >= until);
+    list.push({ clip, from, until });
+    this.effects.set(id, list);
   }
 
   render(now: number, viewport: Viewport): SceneFrame {
@@ -283,8 +479,8 @@ export class Scene {
     const css = viewport.devicePixelRatio;
     const home = viewport.home ?? { x: 0, y: 0, width: viewport.width, height: viewport.height };
     this.spriteCss = size / css;
+    this.scaleCss = pixel / css;
     this.homeCss = { width: home.width / css, height: home.height / css };
-    this.walkSpeedCss = WALK_SPEED * viewport.scale;
 
     const waiting = new Set(
       [...this.buddies].filter(([, b]) => b.view.state === "waiting").map(([id]) => id),
@@ -309,34 +505,58 @@ export class Scene {
       return { x: at.x + home.x, y: at.y + home.y };
     };
     const toHome = (p: Point): Point => ({ x: (p.x - home.x) / css, y: (p.y - home.y) / css });
+    const toCanvasPoint = (p: Point): Point => ({
+      x: Math.round(home.x + p.x * css),
+      y: Math.round(home.y + p.y * css),
+    });
+    const region = (x: number, y: number): HitRegion => ({
+      x: (x + BODY_BOX.x * pixel) / css,
+      y: (y + BODY_BOX.y * pixel) / css,
+      width: (BODY_BOX.width * pixel) / css,
+      height: (BODY_BOX.height * pixel) / css,
+    });
 
     const sprites: PlacedSprite[] = [];
+    const effects: PlacedEffect[] = [];
     const regions: HitRegion[] = [];
     let nextChangeAt: number | null = null;
     const changeAt = (t: number | null) => {
       if (t !== null) nextChangeAt = nextChangeAt === null ? t : Math.min(nextChangeAt, t);
     };
 
+    // Slots first: visits walk to the slot of the buddy they visit.
+    for (const [id] of this.buddies) {
+      const target = plan.buddies.get(id);
+      if (target) this.slots.set(id, toHome(place(target)));
+      else this.slots.delete(id);
+    }
+
     for (const [id, buddy] of this.buddies) {
       const target = plan.buddies.get(id);
-      const thrown = this.throws.get(id);
-      if (thrown) {
-        // In the air or on its way back: logically it already holds its slot.
+      const slot = this.slots.get(id) ?? this.placed.get(id) ?? { x: 0, y: 0 };
+      const away = this.away.get(id);
+      if (away) {
+        // Away: logically it already holds its slot.
         if (target) {
           buddy.offset = target.offset;
           buddy.walk = null;
         }
-        const slot = target ? toHome(place(target)) : (this.placed.get(id) ?? { x: 0, y: 0 });
-        const shown = thrown.update(now, slot);
-        if (shown.phase === "done") {
-          this.throws.delete(id);
+        const shown = away.update(now, slot, this.partnerSpot(id));
+        if (shown.done) {
+          this.away.delete(id);
+          this.visits.delete(id);
+          buddy.animation.restart(now);
+          // A stroll already booked the next one; after anything else, start over.
+          if (away instanceof Stroll) this.nextStrollAnyAt = now + this.between(this.strolls.gap);
+          else buddy.strollAt = null;
         } else {
-          const x = Math.round(home.x + shown.x * css);
-          const y = Math.round(home.y + shown.y * css);
+          this.noteReply(id, now);
+          const { x, y } = toCanvasPoint(shown);
           sprites.push({ id, frame: shown.frame, x, y, size, hop: 0 });
-          regions.push({ x: x / css, y: y / css, width: size / css, height: size / css });
+          regions.push(region(x, y));
           this.placed.set(id, { x: shown.x, y: shown.y });
-          changeAt(now + MOVE_FRAME_MS);
+          this.pushEffects(id, x, y, size, now, effects, changeAt);
+          changeAt(now + (away instanceof Thrown ? MOVE_FRAME_MS : WALK_FRAME_MS));
           continue;
         }
       }
@@ -352,11 +572,12 @@ export class Scene {
       if (walking) {
         const walk = buddy.walk as Walk;
         frame = frameAt(this.walkClip, now - walk.startedAt, true).frame;
-        changeAt(now + MOVE_FRAME_MS);
+        changeAt(now + WALK_FRAME_MS);
       } else {
         const showing = buddy.animation.current(now);
         frame = showing.frame;
         changeAt(showing.nextChangeAt);
+        changeAt(this.considerStroll(id, buddy, showing.clip, slot, now));
       }
       const { x, y } = place({ offset, lift: target.lift });
       const lift = this.hopLift(buddy, now);
@@ -365,7 +586,8 @@ export class Scene {
       const hop = lift === 0 ? 0 : (this.corner.startsWith("bottom") ? -lift : lift) * pixel;
       sprites.push({ id, frame, x, y, size, hop });
       this.placed.set(id, toHome({ x, y }));
-      regions.push({ x: x / css, y: y / css, width: size / css, height: size / css });
+      regions.push(region(x, y));
+      this.pushEffects(id, x, y + hop, size, now, effects, changeAt);
     }
 
     let chip: PlacedChip | null = null;
@@ -379,6 +601,7 @@ export class Scene {
 
     return {
       sprites,
+      effects,
       chip,
       regions,
       contentSize: {
@@ -386,7 +609,112 @@ export class Scene {
         height: plan.extent.across * viewport.scale,
       },
       nextChangeAt,
+      pixel,
     };
+  }
+
+  /** Where a visiting buddy stands: beside the buddy it visits, on its own side. */
+  private partnerSpot(id: string): Point | undefined {
+    const visiting = this.visits.get(id);
+    if (!visiting) return undefined;
+    const them = this.placed.get(visiting.to) ?? this.slots.get(visiting.to);
+    const mine = this.slots.get(id);
+    if (!them || !mine || !this.buddies.has(visiting.to)) return undefined;
+    const side = mine.x < them.x ? -1 : 1;
+    return { x: them.x + side * this.spriteCss * 0.85, y: them.y };
+  }
+
+  /** Once a visit's talk starts, the visited buddy answers a moment later. */
+  private noteReply(id: string, now: number): void {
+    const visiting = this.visits.get(id);
+    const since = visiting?.visit.talkingSince ?? null;
+    if (!visiting || visiting.replied || since === null || since > now) return;
+    visiting.replied = true;
+    this.addEffect(visiting.to, this.clips.fxReply, since + REPLY_AFTER_MS, since + TALK_MS);
+  }
+
+  /** Adds the bubbles showing over buddy `id` now, and when they change. */
+  private pushEffects(
+    id: string,
+    x: number,
+    y: number,
+    size: number,
+    now: number,
+    out: PlacedEffect[],
+    changeAt: (t: number | null) => void,
+  ): void {
+    const list = this.effects.get(id);
+    if (!list) return;
+    const live = list.filter((e) => e.until > now);
+    if (live.length === 0) {
+      this.effects.delete(id);
+      return;
+    }
+    this.effects.set(id, live);
+    for (const effect of live) {
+      if (effect.from > now) {
+        changeAt(effect.from);
+        continue;
+      }
+      const { frame, nextChangeAt } = frameAt(effect.clip, now - effect.from, true);
+      out.push({ id, frame, x, y, size });
+      changeAt(nextChangeAt === null ? null : effect.from + nextChangeAt);
+      changeAt(effect.until);
+    }
+  }
+
+  /**
+   * Starts a stroll for an idle buddy when its time comes, one buddy at a
+   * time and never under the pointer. Returns when to check again.
+   */
+  private considerStroll(
+    id: string,
+    buddy: Buddy,
+    clip: string,
+    slot: Point,
+    now: number,
+  ): number | null {
+    if (this.options.reduceMotion || buddy.view.state !== "idle") {
+      buddy.strollAt = null;
+      return null;
+    }
+    if (buddy.strollAt === null) {
+      buddy.strollAt = now + this.between(this.strolls.first);
+      return buddy.strollAt;
+    }
+    if (now < buddy.strollAt) return buddy.strollAt;
+    if (now < this.nextStrollAnyAt) {
+      // Someone strolled a moment ago: wait for the quiet time to pass.
+      buddy.strollAt = this.nextStrollAnyAt + this.between([0, 10_000]);
+      return buddy.strollAt;
+    }
+    const someoneOut = this.away.size > 0;
+    if (someoneOut || clip !== "idle" || this.hovered === id || buddy.walk !== null) {
+      // Not now: try again a little later.
+      buddy.strollAt = now + this.between([4_000, 9_000]);
+      return buddy.strollAt;
+    }
+    const direction = this.corner.endsWith("right") ? -1 : 1;
+    const distance = this.between(this.strolls.distance) * this.scaleCss;
+    let x = slot.x + direction * distance;
+    if (this.workArea) {
+      x = Math.min(Math.max(x, this.workArea.left), this.workArea.right - this.spriteCss);
+    }
+    this.away.set(
+      id,
+      new Stroll(slot, now, {
+        clips: { walkLeft: this.clips.walkLeft, walkRight: this.clips.walkRight, look: this.clips.look },
+        speed: STROLL_SPEED * this.scaleCss,
+        turnAt: { x, y: slot.y },
+        pauseMs: this.between(this.strolls.pause),
+      }),
+    );
+    buddy.strollAt = now + this.between(this.strolls.every);
+    return now + WALK_FRAME_MS;
+  }
+
+  private between([min, max]: [number, number]): number {
+    return min + this.random() * (max - min);
   }
 
   /**

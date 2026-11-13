@@ -226,6 +226,19 @@ The mapping lives in one table in the registry so it is easy to tune.
 - `waiting` and `leaving` skip the minimum display time: the user must see them at once. A state queued behind the minimum is replaced by any newer one, so only the latest is shown.
 - Implemented in `apps/desktop/src-tauri/src/registry/` as pure logic: the caller passes the time in, `Registry::apply` takes a normalised event, `Registry::tick` runs the timers, and `Registry::next_deadline` says when the next tick is due, so nothing polls.
 
+## Sessions talking to each other
+
+When one session messages another, the sender's buddy walks over to the recipient's and they chat (docs/animation-spec.md#sessions-talking-to-each-other).
+
+- **Messaging tools:** Claude Code's `SendMessage` and MCP tools named `send_message` (for example `mcp__claude-code-remote__send_message`), as `bridge_protocol::target::is_message_tool` decides. Their `target` is the recipient only: the first of `to`, `recipient` or `session_id`, cut to 60 chars. The message itself is never sent or stored. `SendMessage` keeps the current state (the tool → state table has no entry for it); an MCP `send_message` counts as working.
+- **Pairing,** in the registry (`Registry::track_messages`):
+  1. A target that names another live session pairs at once: its session id, the start of its id (8 characters or more), or its project name (the folder name), ignoring case.
+  2. Otherwise the message waits up to 5 s for its recipient: the next *other* session that gets a prompt (`UserPromptSubmit`) is taken to have received it.
+  3. With exactly one other live session, that one is the recipient after 1.5 s.
+  4. Failing all of these, the interaction is reported without a recipient after 5 s, and the sender just shows a speech bubble.
+- **Output:** a `sessions:interaction` event `{ from, to }` (`to` is `null` when unknown). The waiting messages are part of `Registry::next_deadline`, so nothing polls.
+- **Limits:** step 2 is a guess: a prompt typed into another session within 5 s of a message counts as receiving it. Messages to sessions on other machines (cloud sessions) just show the bubble.
+
 ## Liveness
 
 - `buddy-hook` sends `CLAUDE_PID` (set by Claude Code in every command hook's environment) with each event as `claude_pid`; the registry stores it per session. No parent-chain walking is needed to find the Claude process.

@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import type { SessionView } from "../types";
 import {
-  cardLines,
+  activity,
+  balloonLines,
   clip,
+  describeTool,
   formatElapsed,
   HOVER_DELAY_MS,
   HoverState,
@@ -55,36 +57,74 @@ describe("formatElapsed", () => {
   });
 });
 
-describe("cardLines", () => {
-  it("project, state and time, then the activity", () => {
-    const lines = cardLines({ ...base, summary: "Edit · src/app.ts" }, 134_000);
-    expect(lines).toEqual(["claude-buddy · Working · 2m 14s", "Edit · src/app.ts"]);
+describe("describeTool", () => {
+  it.each([
+    ["Edit", "app.ts", "Editing app.ts"],
+    ["Read", "README.md", "Reading README.md"],
+    ["Write", "notes.md", "Writing notes.md"],
+    ["Grep", "fn main", "Searching for fn main"],
+    ["Glob", "**/*.rs", "Looking for **/*.rs"],
+    ["WebSearch", "tauri tray", "Searching the web for tauri tray"],
+    ["WebFetch", "docs.rs", "Reading docs.rs"],
+    ["Bash", "pnpm", "Running pnpm"],
+    ["Agent", "Explore", "Delegating to Explore"],
+    ["SendMessage", "researcher", "Messaging researcher"],
+    ["mcp__claude-code-remote__send_message", "session_01", "Messaging session_01"],
+  ])("%s on %s → %s", (tool, target, text) => {
+    expect(describeTool(tool, target)).toBe(text);
   });
 
-  it("falls back to the tool name, and to nothing", () => {
-    expect(cardLines({ ...base, tool: "Bash" }, 0)[1]).toBe("Bash");
-    expect(cardLines(base, 0)).toHaveLength(1);
+  it("reads well without a target", () => {
+    expect(describeTool("Bash")).toBe("Running a command");
+    expect(describeTool("TodoWrite")).toBe("Planning the next steps");
+    expect(describeTool("SendMessage")).toBe("Sending a message");
+    expect(describeTool("mcp__github__create_pull_request")).toBe("Using github: create pull request");
+    expect(describeTool("Mystery")).toBe("Using Mystery");
+  });
+});
+
+describe("activity", () => {
+  it("says what a busy session's tool does", () => {
+    expect(activity({ ...base, tool: "Edit", summary: "Edit · app.ts" })).toBe("Editing app.ts");
+    expect(activity({ ...base, state: "researching", tool: "Read", summary: "Read" })).toBe("Reading files");
   });
 
-  it("labels waiting for the user plainly", () => {
-    expect(cardLines({ ...base, state: "waiting" }, 0)[0]).toContain("Waiting for you");
+  it("speaks of the state otherwise, ignoring the last tool", () => {
+    expect(activity({ ...base, state: "idle", tool: "Edit", summary: "Edit · app.ts" })).toBe(
+      "Done, waiting for a prompt",
+    );
+    expect(activity({ ...base, state: "waiting" })).toBe("Waiting for you");
+    expect(activity({ ...base, state: "working" })).toBe("Thinking");
+  });
+});
+
+describe("balloonLines", () => {
+  it("what it does, then project, state and time", () => {
+    const lines = balloonLines({ ...base, tool: "Edit", summary: "Edit · src/app.ts" }, 134_000);
+    expect(lines).toEqual(["Editing src/app.ts", "claude-buddy · Working 2m 14s"]);
   });
 
   it("marks transcript-only sessions as approximate", () => {
-    const lines = cardLines({ ...base, source: "transcript", summary: "Read · a.ts" }, 0);
+    const lines = balloonLines({ ...base, source: "transcript", tool: "Read", summary: "Read · a.ts" }, 0);
     expect(lines).toHaveLength(3);
     expect(lines[2]).toMatch(/^Approximate/);
   });
 
   it("never exceeds 3 lines of 80 characters", () => {
-    const long = { ...base, project: "p".repeat(200), summary: "s".repeat(200), source: "transcript" as const };
-    const lines = cardLines(long, 0);
+    const long = {
+      ...base,
+      project: "p".repeat(200),
+      tool: "Read",
+      summary: `Read · ${"s".repeat(200)}`,
+      source: "transcript" as const,
+    };
+    const lines = balloonLines(long, 0);
     expect(lines.length).toBeLessThanOrEqual(3);
     for (const line of lines) expect(Array.from(line).length).toBeLessThanOrEqual(80);
   });
 
   it("an empty project name still reads well", () => {
-    expect(cardLines({ ...base, project: "" }, 0)[0]).toBe("session · Working · 0s");
+    expect(balloonLines({ ...base, project: "" }, 0)[1]).toBe("session · Working 0s");
   });
 });
 
@@ -137,26 +177,26 @@ describe("placeCard", () => {
   const card = { width: 300, height: 60 };
   const gap = 8;
 
-  it("sits above the buddy and grows inwards in a bottom-right corner", () => {
-    const buddy = { x: 600, y: 236, width: 64, height: 64 };
+  it("sits centred above the buddy in a bottom corner", () => {
+    const buddy = { x: 400, y: 236, width: 64, height: 64 };
     expect(placeCard(buddy, card, canvas, "bottom-right", gap)).toEqual({
-      x: 664 - 300,
+      x: 432 - 150,
       y: 236 - 8 - 60,
       width: 300,
       height: 60,
     });
   });
 
-  it("sits below the buddy in a top-left corner", () => {
-    const buddy = { x: 72, y: 0, width: 64, height: 64 };
-    expect(placeCard(buddy, card, canvas, "top-left", gap)).toMatchObject({ x: 72, y: 72 });
+  it("sits below the buddy in a top corner", () => {
+    const buddy = { x: 300, y: 0, width: 64, height: 64 };
+    expect(placeCard(buddy, card, canvas, "top-left", gap)).toMatchObject({ x: 182, y: 72 });
   });
 
-  it("flips back inside near an edge", () => {
-    const nearRight = { x: 700, y: 236, width: 64, height: 64 };
-    expect(placeCard(nearRight, card, canvas, "bottom-left", gap).x).toBe(800 - 300);
+  it("stays inside the canvas near an edge", () => {
+    const nearRight = { x: 720, y: 236, width: 64, height: 64 };
+    expect(placeCard(nearRight, card, canvas, "bottom-right", gap).x).toBe(800 - 300);
     const nearLeft = { x: 10, y: 236, width: 64, height: 64 };
-    expect(placeCard(nearLeft, card, canvas, "bottom-right", gap).x).toBe(0);
+    expect(placeCard(nearLeft, card, canvas, "bottom-left", gap).x).toBe(0);
   });
 
   it("never leaves the canvas vertically", () => {

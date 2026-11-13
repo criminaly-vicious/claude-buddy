@@ -5,10 +5,31 @@ use serde_json::Value;
 
 use crate::{limits, truncate};
 
+/// Tools one session uses to message another: Claude Code's `SendMessage`
+/// and MCP tools named `send_message`. Their target is the recipient.
+pub fn is_message_tool(tool_name: &str) -> bool {
+    if tool_name == "SendMessage" {
+        return true;
+    }
+    tool_name.strip_prefix("mcp__").is_some_and(|rest| {
+        rest.rsplit("__")
+            .next()
+            .is_some_and(|name| name.eq_ignore_ascii_case("send_message"))
+    })
+}
+
 /// The `target` for `tool_name` called with `tool_input`, or `None` when the
 /// tool has no target rule or the input does not look safe.
 pub fn derive(tool_name: &str, tool_input: &Value) -> Option<String> {
     let field = |name: &str| tool_input.get(name).and_then(Value::as_str);
+    if is_message_tool(tool_name) {
+        // Who the message is for, never what it says.
+        let to = ["to", "recipient", "session_id"]
+            .into_iter()
+            .find_map(field)?;
+        let to = truncate(to.trim(), limits::TARGET);
+        return (!to.is_empty()).then(|| to.to_string());
+    }
     let target = match tool_name {
         "Read" | "Edit" | "MultiEdit" | "Write" => file_name(field("file_path")?),
         "NotebookEdit" => file_name(field("notebook_path")?),
@@ -118,6 +139,31 @@ mod tests {
         assert_eq!(
             target("WebSearch", json!({"query": "tauri transparent window"})),
             Some("tauri transparent window".into())
+        );
+    }
+
+    #[test]
+    fn message_tools_send_the_recipient_only() {
+        assert_eq!(
+            target(
+                "SendMessage",
+                json!({"to": "researcher", "message": "the plan"})
+            ),
+            Some("researcher".into())
+        );
+        assert_eq!(
+            target(
+                "mcp__claude-code-remote__send_message",
+                json!({"session_id": "session_01ABC", "message": "hi"})
+            ),
+            Some("session_01ABC".into())
+        );
+        assert_eq!(target("SendMessage", json!({"message": "hi"})), None);
+        assert!(is_message_tool("mcp__chat__SEND_MESSAGE"));
+        assert!(!is_message_tool("mcp__chat__send_messages"));
+        assert!(
+            !is_message_tool("send_message"),
+            "only MCP tools by that name"
         );
     }
 
