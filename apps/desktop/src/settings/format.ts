@@ -58,6 +58,12 @@ export function hookStatusText(status: HookStatus): { text: string; ok: boolean 
   if (status.installed === null) {
     return { text: "Could not read Claude Code's settings.", ok: false };
   }
+  if (!status.installed && status.outdated) {
+    return {
+      text: "Hooks are out of date. Use Install / repair hooks… in the tray menu so buddies also show subagents.",
+      ok: false,
+    };
+  }
   if (!status.installed) {
     return {
       text: "Hooks are not installed. Buddies are approximate until you install them from the tray menu.",

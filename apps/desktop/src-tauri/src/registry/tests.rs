@@ -24,6 +24,7 @@ fn event_from(source: Source, at: Millis, kind: EventKind) -> RegistryEvent {
         at,
         cwd: Some("/home/user/projects/demo".to_string()),
         pid: Some(4242),
+        agent: None,
         kind,
     }
 }
@@ -338,15 +339,22 @@ fn from_hook_fixture(name: &str, at: Millis) -> RegistryEvent {
         "PostToolUse" => EventKind::ToolFinished { tool: tool() },
         "Notification" => EventKind::NeedsInput,
         "Stop" => EventKind::TurnEnded,
+        "SubagentStart" => EventKind::SubagentStarted,
+        "SubagentStop" => EventKind::SubagentStopped,
         "SessionEnd" => EventKind::SessionEnded,
         other => panic!("unmapped hook event {other}"),
     };
+    let agent = payload["agent_id"].as_str().map(|id| Agent {
+        id: id.to_string(),
+        kind: payload["agent_type"].as_str().map(str::to_string),
+    });
     RegistryEvent {
         session_id: payload["session_id"].as_str().unwrap().to_string(),
         source: Source::Hooks,
         at,
         cwd: payload["cwd"].as_str().map(str::to_string),
         pid: None,
+        agent,
         kind,
     }
 }
@@ -366,6 +374,17 @@ fn captured_session_plays_out_as_documented() {
         ),
         ("captured/post-tool-use-bash.json", BuddyState::Waiting),
         ("captured/pre-tool-use-agent.json", BuddyState::Working),
+        // The subagent's own tools show on its mini buddy: the parent keeps working.
+        ("captured/subagent-start.json", BuddyState::Working),
+        (
+            "captured/pre-tool-use-read-in-subagent.json",
+            BuddyState::Working,
+        ),
+        (
+            "captured/post-tool-use-read-in-subagent.json",
+            BuddyState::Working,
+        ),
+        ("captured/subagent-stop.json", BuddyState::Working),
         ("captured/stop.json", BuddyState::Idle),
         ("captured/session-end.json", BuddyState::Leaving),
     ];
@@ -458,6 +477,7 @@ fn event_for(id: &str, project: &str, at: Millis, kind: EventKind) -> RegistryEv
         at,
         cwd: Some(format!("/home/user/{project}")),
         pid: None,
+        agent: None,
         kind,
     }
 }
@@ -563,4 +583,202 @@ fn ordinary_tools_are_not_messages() {
     let changes = registry.apply(event_for(ALICE, "api", 2_000, tool("Read")));
     assert!(interactions(&changes).is_empty());
     assert!(registry.messages.is_empty());
+}
+
+// --- Subagents (docs/session-detection.md#subagents) -------------------------
+
+fn from_agent(at: Millis, id: &str, kind: EventKind) -> RegistryEvent {
+    RegistryEvent {
+        agent: Some(Agent {
+            id: id.to_string(),
+            kind: Some("Explore".to_string()),
+        }),
+        ..event(at, kind)
+    }
+}
+
+fn read(target: &str) -> EventKind {
+    EventKind::ToolStarted {
+        tool: "Read".into(),
+        summary: Some(format!("Read · {target}")),
+        target: Some(target.into()),
+    }
+}
+
+/// An idle session that delegates: working, its last tool `Agent`, from t=2000.
+fn delegating_registry() -> Registry {
+    let mut registry = idle_registry();
+    registry.apply(event(2_000, EventKind::PromptSubmitted));
+    registry.apply(event(2_000, tool("Agent")));
+    registry.tick(3_000);
+    assert_eq!(state(&registry), BuddyState::Working);
+    registry
+}
+
+fn subagents(registry: &Registry) -> Vec<SubagentView> {
+    registry.snapshot()[0].subagents.clone()
+}
+
+#[test]
+fn a_subagent_shows_on_its_session_until_it_stops() {
+    let mut registry = delegating_registry();
+    let changes = registry.apply(from_agent(3_100, "a1", EventKind::SubagentStarted));
+    assert_eq!(changes.len(), 1, "the overlay hears about the new subagent");
+    assert_eq!(
+        subagents(&registry),
+        [SubagentView {
+            id: "a1".into(),
+            kind: Some("Explore".into()),
+            tool: None,
+            summary: None,
+            since: 3_100,
+        }]
+    );
+
+    registry.apply(from_agent(3_200, "a1", read("notes.txt")));
+    registry.tick(4_000);
+    let sub = &subagents(&registry)[0];
+    assert_eq!(sub.tool.as_deref(), Some("Read"));
+    assert_eq!(sub.summary.as_deref(), Some("Read · notes.txt"));
+    // The parent still delegates: its pose and its last tool stay.
+    let parent = &registry.snapshot()[0];
+    assert_eq!(parent.state, BuddyState::Working);
+    assert_eq!(parent.tool.as_deref(), Some("Agent"));
+
+    registry.apply(from_agent(4_100, "a1", EventKind::SubagentStopped));
+    assert!(subagents(&registry).is_empty());
+    assert_eq!(state(&registry), BuddyState::Working);
+}
+
+#[test]
+fn a_subagent_first_seen_through_its_tools_still_shows() {
+    let mut registry = delegating_registry();
+    registry.apply(from_agent(3_100, "a1", read("notes.txt")));
+    let subs = subagents(&registry);
+    assert_eq!(subs.len(), 1);
+    assert_eq!(subs[0].kind.as_deref(), Some("Explore"));
+    assert_eq!(subs[0].tool.as_deref(), Some("Read"));
+}
+
+#[test]
+fn subagents_keep_their_start_order() {
+    let mut registry = delegating_registry();
+    for (i, id) in ["a1", "a2", "a3"].into_iter().enumerate() {
+        registry.apply(from_agent(
+            3_100 + i as Millis,
+            id,
+            EventKind::SubagentStarted,
+        ));
+    }
+    registry.apply(from_agent(3_200, "a2", EventKind::SubagentStopped));
+    registry.apply(from_agent(3_300, "a1", read("a.ts")));
+    let ids: Vec<String> = subagents(&registry).into_iter().map(|s| s.id).collect();
+    assert_eq!(ids, ["a1", "a3"]);
+}
+
+#[test]
+fn a_permission_prompt_inside_a_subagent_makes_the_parent_wait() {
+    let mut registry = delegating_registry();
+    registry.apply(from_agent(3_100, "a1", EventKind::SubagentStarted));
+    registry.apply(from_agent(3_200, "a1", EventKind::NeedsInput));
+    assert_eq!(state(&registry), BuddyState::Waiting);
+    // The subagent going on means the user answered.
+    registry.apply(from_agent(4_000, "a1", tool("Bash")));
+    registry.tick(4_000);
+    assert_eq!(state(&registry), BuddyState::Working);
+}
+
+#[test]
+fn a_subagent_finishing_does_not_end_the_parents_turn() {
+    let mut registry = delegating_registry();
+    registry.apply(from_agent(3_100, "a1", EventKind::SubagentStarted));
+    registry.apply(from_agent(3_200, "a1", EventKind::TurnEnded));
+    registry.tick(5_000);
+    assert_eq!(state(&registry), BuddyState::Working);
+    assert!(subagents(&registry).is_empty());
+}
+
+#[test]
+fn a_silent_subagent_is_dropped() {
+    let mut registry = delegating_registry();
+    registry.apply(from_agent(3_100, "a1", EventKind::SubagentStarted));
+    registry.apply(from_agent(3_500, "a2", EventKind::SubagentStarted));
+    assert_eq!(registry.next_deadline(), Some(3_100 + SUBAGENT_TTL_MS));
+    assert!(registry.tick(3_100 + SUBAGENT_TTL_MS - 1).is_empty());
+    let changes = registry.tick(3_100 + SUBAGENT_TTL_MS);
+    assert_eq!(changes.len(), 1);
+    let ids: Vec<String> = subagents(&registry).into_iter().map(|s| s.id).collect();
+    assert_eq!(ids, ["a2"]);
+}
+
+#[test]
+fn a_subagent_known_only_from_its_tools_goes_sooner() {
+    let mut registry = delegating_registry();
+    registry.apply(from_agent(3_100, "a1", read("a.ts")));
+    assert_eq!(
+        registry.next_deadline(),
+        Some(3_100 + UNANNOUNCED_SUBAGENT_TTL_MS)
+    );
+    // Each tool event pushes it back.
+    registry.apply(from_agent(60_000, "a1", read("b.ts")));
+    registry.tick(3_100 + UNANNOUNCED_SUBAGENT_TTL_MS);
+    assert_eq!(subagents(&registry).len(), 1);
+    registry.tick(60_000 + UNANNOUNCED_SUBAGENT_TTL_MS);
+    assert!(subagents(&registry).is_empty());
+}
+
+#[test]
+fn background_subagents_keep_working_after_the_turn() {
+    let mut registry = delegating_registry();
+    registry.apply(from_agent(3_100, "a1", EventKind::SubagentStarted));
+    registry.apply(event(3_200, EventKind::TurnEnded));
+    registry.tick(4_000);
+    assert_eq!(state(&registry), BuddyState::Idle);
+    assert_eq!(subagents(&registry).len(), 1);
+    // Its work keeps the parent awake.
+    registry.apply(from_agent(4_000 + 9_000, "a1", read("b.ts")));
+    registry.tick(4_000 + 12_000);
+    assert_eq!(state(&registry), BuddyState::Idle);
+}
+
+#[test]
+fn the_session_leaving_takes_its_subagents() {
+    let mut registry = delegating_registry();
+    registry.apply(from_agent(3_100, "a1", EventKind::SubagentStarted));
+    registry.apply(event(3_200, EventKind::SessionEnded));
+    assert_eq!(state(&registry), BuddyState::Leaving);
+    assert!(subagents(&registry).is_empty());
+    // Late events from the subagent do not bring it back.
+    registry.apply(from_agent(3_300, "a1", read("c.ts")));
+    assert!(subagents(&registry).is_empty());
+}
+
+#[test]
+fn subagents_are_capped() {
+    let mut registry = delegating_registry();
+    for i in 0..(MAX_SUBAGENTS + 4) {
+        registry.apply(from_agent(
+            3_100 + i as Millis,
+            &format!("a{i}"),
+            EventKind::SubagentStarted,
+        ));
+    }
+    assert_eq!(subagents(&registry).len(), MAX_SUBAGENTS);
+}
+
+#[test]
+fn subagents_serialise_like_the_typescript_contract() {
+    let mut registry = delegating_registry();
+    registry.apply(from_agent(3_100, "a1", read("notes.txt")));
+    let json = serde_json::to_value(&registry.snapshot()[0]).unwrap();
+    assert_eq!(
+        json["subagents"],
+        serde_json::json!([{
+            "id": "a1",
+            "kind": "Explore",
+            "tool": "Read",
+            "summary": "Read · notes.txt",
+            "since": 3100
+        }])
+    );
 }

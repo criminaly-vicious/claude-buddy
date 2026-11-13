@@ -44,11 +44,12 @@ export const register: Register = on => {
   // `classic.PreToolUse` hands the tool call's envelope (`tool`, the call's
   // arguments spread beside it), not a settings hook's stdin: rebuild that.
   on('classic.PreToolUse', ($, e, next) => {
-    const { tool, tool_use_id: _id, agentId, ...input } = e as Payload
+    const { tool, tool_use_id: _id, agentId, agentType, ...input } = e as Payload
     report($, 'PreToolUse', {
       tool_name: tool,
       tool_input: input,
       ...(typeof agentId === 'string' ? { agent_id: agentId } : {}),
+      ...(typeof agentType === 'string' ? { agent_type: agentType } : {}),
     })
     return next(e)
   }).catch(($, e, next) => next(e))
@@ -78,6 +79,15 @@ export const register: Register = on => {
   }).catch(($, e, next) => next(e))
   on('classic.Stop', ($, e, next) => {
     report($, 'Stop', e)
+    return next(e)
+  }).catch(($, e, next) => next(e))
+  // A subagent's buddy appears and leaves with these (its last message stays here).
+  on('classic.SubagentStart', ($, e, next) => {
+    report($, 'SubagentStart', e)
+    return next(e)
+  }).catch(($, e, next) => next(e))
+  on('classic.SubagentStop', ($, e, next) => {
+    report($, 'SubagentStop', e)
     return next(e)
   }).catch(($, e, next) => next(e))
   on('classic.SessionEnd', ($, e, next) => {

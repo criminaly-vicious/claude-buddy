@@ -22,15 +22,18 @@ export async function subscribeSessions(handlers: SessionHandlers): Promise<() =
   if (import.meta.env.MODE === "mock") {
     // `?count=12` tries the overflow chip (default 5); `?cycle=0` keeps the
     // states still (default: next state every 3 s); `?chat=4000` makes two
-    // sessions talk every 4 s (default 9 s).
+    // sessions talk every 4 s (default 9 s); `?minis=3` gives busy sessions
+    // up to 3 subagents (default 2).
     const params = new URLSearchParams(location.search);
     const count = Number(params.get("count")) || 5;
     const cycle = params.get("cycle");
+    const minis = params.get("minis");
     return startMockFeed(handlers.snapshot, {
       count,
       intervalMs: cycle === null ? 3000 : Number(cycle),
       onInteraction: handlers.interaction,
       interactEveryMs: Number(params.get("chat")) || 9000,
+      subagents: minis === null ? 2 : Number(minis),
     });
   }
   const unlisten = await Promise.all([

@@ -59,6 +59,7 @@ pub fn build_event(
             .flatten(),
         start_source: (event == "SessionStart").then(|| text("source")).flatten(),
         agent_id: text("agent_id"),
+        agent_type: text("agent_type"),
         event,
     };
     body.clamp_lengths();

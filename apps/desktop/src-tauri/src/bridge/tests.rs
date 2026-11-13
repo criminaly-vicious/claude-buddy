@@ -323,6 +323,7 @@ fn driver_expires_session_when_its_process_exits() {
             at: now(),
             cwd: Some("/demo".into()),
             pid: Some(4242),
+            agent: None,
             kind: crate::registry::EventKind::SessionStarted,
         }))
         .unwrap();

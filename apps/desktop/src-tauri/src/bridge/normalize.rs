@@ -2,7 +2,7 @@
 
 use bridge_protocol::EventBody;
 
-use crate::registry::{tool_summary, EventKind, Millis, RegistryEvent, Source};
+use crate::registry::{tool_summary, Agent, EventKind, Millis, RegistryEvent, Source};
 
 /// Notification types that mean the user is needed.
 const WAITING_NOTIFICATIONS: &[&str] = &[
@@ -17,6 +17,11 @@ const WAITING_NOTIFICATIONS: &[&str] = &[
 /// receive time. `None` for events the MVP knowingly ignores.
 pub fn to_registry_event(body: EventBody, received_at: Millis) -> Option<RegistryEvent> {
     let tool = || body.tool_name.clone().unwrap_or_default();
+    // `agent_type` alone (a session started with `--agent`) is not a subagent.
+    let agent = body.agent_id.clone().map(|id| Agent {
+        id,
+        kind: body.agent_type.clone(),
+    });
     let kind = match body.event.as_str() {
         "SessionStart" => EventKind::SessionStarted,
         "UserPromptSubmit" => EventKind::PromptSubmitted,
@@ -35,6 +40,9 @@ pub fn to_registry_event(body: EventBody, received_at: Millis) -> Option<Registr
         }
         "PermissionRequest" => EventKind::NeedsInput,
         "Stop" => EventKind::TurnEnded,
+        "SubagentStart" | "SubagentStop" if agent.is_none() => return None,
+        "SubagentStart" => EventKind::SubagentStarted,
+        "SubagentStop" => EventKind::SubagentStopped,
         "SessionEnd" => EventKind::SessionEnded,
         _ => return None,
     };
@@ -44,6 +52,7 @@ pub fn to_registry_event(body: EventBody, received_at: Millis) -> Option<Registr
         at: received_at,
         cwd: Some(body.cwd),
         pid: body.claude_pid,
+        agent,
         kind,
     })
 }
@@ -65,6 +74,7 @@ mod tests {
             notification_type: None,
             start_source: None,
             agent_id: None,
+            agent_type: None,
         }
     }
 
@@ -154,7 +164,43 @@ mod tests {
     }
 
     #[test]
-    fn subagent_and_unknown_events_are_ignored() {
+    fn subagent_events_name_their_subagent() {
+        let sub = |event: &str| EventBody {
+            agent_id: Some("a1".into()),
+            agent_type: Some("Explore".into()),
+            ..body(event)
+        };
+        let start = to_registry_event(sub("SubagentStart"), 100).unwrap();
+        assert_eq!(start.kind, EventKind::SubagentStarted);
+        assert_eq!(
+            start.agent,
+            Some(Agent {
+                id: "a1".into(),
+                kind: Some("Explore".into())
+            })
+        );
+        assert_eq!(kind(sub("SubagentStop")), Some(EventKind::SubagentStopped));
+        let read = EventBody {
+            tool_name: Some("Read".into()),
+            ..sub("PreToolUse")
+        };
+        assert_eq!(
+            to_registry_event(read, 100).unwrap().agent.unwrap().id,
+            "a1"
+        );
+    }
+
+    #[test]
+    fn a_type_without_an_id_is_not_a_subagent() {
+        let main = EventBody {
+            agent_type: Some("reviewer".into()),
+            ..body("Stop")
+        };
+        assert_eq!(to_registry_event(main, 100).unwrap().agent, None);
+    }
+
+    #[test]
+    fn unknown_events_and_subagent_events_without_an_id_are_ignored() {
         assert_eq!(kind(body("SubagentStart")), None);
         assert_eq!(kind(body("SubagentStop")), None);
         assert_eq!(kind(body("SomethingNew")), None);

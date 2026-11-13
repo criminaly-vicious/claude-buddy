@@ -17,6 +17,7 @@ const LIMITS = {
   notification_type: 32,
   start_source: 16,
   agent_id: 64,
+  agent_type: 64,
 } as const
 
 const TOOL_EVENTS = ['PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'PermissionRequest']
@@ -31,6 +32,8 @@ export const REPORTED_EVENTS = [
   'Notification',
   'PermissionRequest',
   'Stop',
+  'SubagentStart',
+  'SubagentStop',
   'SessionEnd',
 ] as const
 
@@ -46,6 +49,7 @@ export type EventBody = {
   notification_type?: string
   start_source?: string
   agent_id?: string
+  agent_type?: string
 }
 
 type Payload = Readonly<Record<string, unknown>>
@@ -104,6 +108,8 @@ export function buildEvent(
   if (source !== undefined) body.start_source = truncate(source, LIMITS.start_source)
   const agentId = text(payload, 'agent_id')
   if (agentId !== undefined) body.agent_id = truncate(agentId, LIMITS.agent_id)
+  const agentType = text(payload, 'agent_type')
+  if (agentType !== undefined) body.agent_type = truncate(agentType, LIMITS.agent_type)
 
   if (TOOL_EVENTS.includes(event) && body.tool_name === undefined) return undefined
   if (event === 'Notification' && body.notification_type === undefined) return undefined
