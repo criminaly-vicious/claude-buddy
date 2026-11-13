@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-11-13
+
 First release: an animated buddy in the corner of your screen for every Claude Code CLI session running on Windows.
 
 ### Added
