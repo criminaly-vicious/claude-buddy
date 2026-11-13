@@ -30,7 +30,7 @@
 
 | Component | Language | Responsibility |
 | --- | --- | --- |
-| `buddy-bridge` mod | TypeScript, Claude Code mod ([ADR-0013](../.context/decisions/0013-claude-code-mod.md)) | The preferred client: a Claude Code plugin whose hooks module sends the same events as `buddy-hook` through `$.http.fetch`, never blocking the session. Installed with `/plugin install buddy-bridge --marketplace criminaly-vicious/claude-buddy`. Stays quiet when the classic `buddy-hook` is installed. See [session detection](session-detection.md#the-claude-code-mod). |
+| `buddy-bridge` mod | TypeScript, Claude Code mod ([ADR-0014](../.context/decisions/0014-claude-code-mod.md)) | The preferred client: a Claude Code plugin whose hooks module sends the same events as `buddy-hook` through `$.http.fetch`, never blocking the session. Installed with `/plugin install buddy-bridge --marketplace criminaly-vicious/claude-buddy`. Stays quiet when the classic `buddy-hook` is installed. See [session detection](session-detection.md#the-claude-code-mod). |
 | `buddy-hook` | Rust (tiny CLI, < 1 MB) | Invoked by Claude Code hooks. Reads hook JSON from stdin, sanitises it, adds `CLAUDE_PID`, POSTs it to the bridge ([protocol](#bridge-protocol)). Exits 0 in < 50 ms and **never** blocks or fails the Claude session (fire-and-forget, short timeout). |
 | Bridge | Rust (`tiny_http`, [ADR-0009](../.context/decisions/0009-tiny-http-bridge-server.md)) | Local HTTP server bound to `127.0.0.1` on a random free port. Port + token written to `bridge.json` ([protocol](#bridge-protocol)). Validates events and normalises them into registry events. |
 | Transcript Watcher | Rust (`notify`) | Watches `~/.claude/projects/**.jsonl`. Tails new lines, infers state when hooks are missing. Debounced. |

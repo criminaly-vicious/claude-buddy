@@ -1,4 +1,4 @@
-# 0013. Connect Claude Code through a Claude Code mod, classic hooks as fallback
+# 0014. Connect Claude Code through a Claude Code mod, classic hooks as fallback
 
 - **Status:** Accepted
 - **Date:** 2026-11-13

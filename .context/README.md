@@ -32,7 +32,7 @@ Shared memory for humans and AI agents. Kept small and current.
 | ADR | Title | Status |
 | --- | --- | --- |
 | [0001](decisions/0001-tauri-desktop-shell.md) | Tauri 2 as desktop shell | Accepted |
-| [0002](decisions/0002-hooks-first-session-detection.md) | Hooks first, transcript watcher as fallback | Accepted, connection superseded by 0013 |
+| [0002](decisions/0002-hooks-first-session-detection.md) | Hooks first, transcript watcher as fallback | Accepted, connection superseded by 0014 |
 | [0003](decisions/0003-loopback-http-bridge.md) | Loopback HTTP bridge with token | Accepted |
 | [0004](decisions/0004-pixel-art-canvas-rendering.md) | Pixel art on Canvas 2D, no UI framework in overlay | Accepted |
 | [0005](decisions/0005-original-character-art.md) | Original character art, no official branding | Accepted |
@@ -43,4 +43,4 @@ Shared memory for humans and AI agents. Kept small and current.
 | [0010](decisions/0010-notify-transcript-watcher.md) | notify for the transcript watcher | Accepted |
 | [0011](decisions/0011-overlay-click-through.md) | Overlay click-through via a low-level mouse hook | Accepted |
 | [0012](decisions/0012-tray-dialogs-and-single-instance.md) | Tray dialogs and single instance with plain Win32 | Accepted |
-| [0013](decisions/0013-claude-code-mod.md) | Connect Claude Code through a Claude Code mod, classic hooks as fallback | Accepted |
+| [0014](decisions/0014-claude-code-mod.md) | Connect Claude Code through a Claude Code mod, classic hooks as fallback | Accepted |

@@ -1,12 +1,12 @@
 # Session detection
 
-How Claude Buddy learns which Claude Code sessions exist and what each one is doing. Decision records: [ADR-0002](../.context/decisions/0002-hooks-first-session-detection.md) and [ADR-0013](../.context/decisions/0013-claude-code-mod.md) (the Claude Code mod).
+How Claude Buddy learns which Claude Code sessions exist and what each one is doing. Decision records: [ADR-0002](../.context/decisions/0002-hooks-first-session-detection.md) and [ADR-0014](../.context/decisions/0014-claude-code-mod.md) (the Claude Code mod).
 
 > **Verified** by spike [#9](https://github.com/criminaly-vicious/claude-buddy/issues/9) on 2026-10-27 against Claude Code **2.1.311 on Linux**, by real capture and the [official hooks reference](https://code.claude.com/docs/en/hooks). Items marked **⚠ Windows: not verified** come from the docs only and must be checked on Windows 10/11 before the code depends on them (see [Windows checklist](#windows-checklist)). Scrubbed samples live in [`tests/fixtures/`](../tests/fixtures/README.md). Parsers must tolerate unknown fields and unknown event names: both change between versions.
 
 ## The Claude Code mod
 
-The preferred way to deliver the hook events below ([ADR-0013](../.context/decisions/0013-claude-code-mod.md)). `buddy-bridge`, in [`mods/buddy-bridge/`](../mods/buddy-bridge), is a Claude Code mod: a plugin with a TypeScript hooks module. It installs with one line and needs no entry in `settings.json`:
+The preferred way to deliver the hook events below ([ADR-0014](../.context/decisions/0014-claude-code-mod.md)). `buddy-bridge`, in [`mods/buddy-bridge/`](../mods/buddy-bridge), is a Claude Code mod: a plugin with a TypeScript hooks module. It installs with one line and needs no entry in `settings.json`:
 
 ```
 /plugin install buddy-bridge --marketplace criminaly-vicious/claude-buddy

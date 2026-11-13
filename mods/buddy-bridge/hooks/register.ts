@@ -1,4 +1,4 @@
-// buddy-bridge: Claude Buddy's Claude Code mod (ADR-0013,
+// buddy-bridge: Claude Buddy's Claude Code mod (ADR-0014,
 // docs/session-detection.md#the-claude-code-mod). It reports each session's
 // hook events to the Claude Buddy app, as the classic `buddy-hook` does,
 // without an entry in settings.json.
