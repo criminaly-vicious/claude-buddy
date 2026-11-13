@@ -2136,7 +2136,7 @@
     }
   ],
   "meta": {
-    "app": "claude-buddy placeholder generator",
+    "app": "claude-buddy gen-buddy-atlas.mjs",
     "image": "atlas.png",
     "format": "RGBA8888",
     "size": {

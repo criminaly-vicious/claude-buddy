@@ -24,10 +24,10 @@ First release: an animated buddy in the corner of your screen for every Claude C
 - **Start with Windows and a hotkey.** Optionally start Claude Buddy when you sign in, and show or hide the buddies from anywhere with `Ctrl+Alt+B` or a hotkey of your choice (#62).
 - **Claude Code mod.** Connect Claude Code with one line, `/plugin install buddy-bridge --marketplace criminaly-vicious/claude-buddy`, without touching your Claude Code settings. The classic hooks from the tray remain as an alternative, and the two never report the same session twice (#70).
 - **Installer.** A small per-user installer that needs no admin rights. Uninstalling offers to remove the hooks from your Claude Code settings and removes the start-with-Windows entry (#63).
+- **Clawd.** The buddy is Clawd, drawn pixel by pixel, with an animation for every state and interaction: popping in, idling, typing, reading, waving, sleeping, walking, being thrown, landing, getting dizzy and waving goodbye. The app and installer icons show him too (#19).
 - **User guide** covering installation, the hooks, every pose, troubleshooting and privacy (#61).
 
 ### Known limitations
 
-- The character art is a placeholder until the final pixel art lands (#19).
 - Clicking a buddy brings its Windows Terminal window to the front, but not the exact tab (#66).
 - The installer is not code-signed yet, so Windows SmartScreen may warn the first time you run it.
