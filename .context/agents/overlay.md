@@ -1,7 +1,7 @@
 # Overlay & animation agent
 
 **Owns:** `apps/desktop/src/overlay/`, `apps/desktop/src/sprites/`, `assets/sprites/`.
-**Read first:** `docs/animation-spec.md`, `docs/architecture.md`, ADR-0004, ADR-0005.
+**Read first:** `docs/animation-spec.md`, `docs/architecture.md`, ADR-0004, ADR-0013.
 
 ## Rules
 - Render loop sleeps when nothing animates; cap 30 fps; integer scaling, nearest-neighbour.

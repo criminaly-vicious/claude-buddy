@@ -27,7 +27,7 @@ Claude Buddy puts a small animated buddy in the corner of your screen for every 
 
 ## Install
 
-**From a release (coming soon).** Once v0.1.0 is published, download `Claude Buddy_<version>_x64-setup.exe` from the [Releases page](https://github.com/criminaly-vicious/claude-buddy/releases) and run it. It installs for your user only (under `%LOCALAPPDATA%`) and needs no admin rights.
+**From a release (coming soon).** Once v1.0.0 is published, download `Claude Buddy_<version>_x64-setup.exe` from the [Releases page](https://github.com/criminaly-vicious/claude-buddy/releases) and run it. It installs for your user only (under `%LOCALAPPDATA%`) and needs no admin rights.
 
 **From source (now).** Follow the setup in [CONTRIBUTING.md](../CONTRIBUTING.md#setup), then:
 
@@ -223,7 +223,7 @@ It is designed to use under 1% CPU and under 80 MB of RAM with five buddies on s
 
 ### Is this made by Anthropic?
 
-No. Claude Buddy is an independent open-source project, not affiliated with or endorsed by Anthropic. The buddy is an original character inspired by Claude Code's playful orange mascot; it does not use Anthropic's logo or artwork ([ADR-0005](../.context/decisions/0005-original-character-art.md)).
+No. Claude Buddy is an independent open-source project, not affiliated with or endorsed by Anthropic. The buddy is fan art of Clawd, the Claude Code mascot, which is Anthropic's character. It is drawn pixel by pixel in code, and the app ships no Anthropic logos or official files ([ADR-0013](../.context/decisions/0013-clawd-character.md)).
 
 ### Where do I report a bug or ask for a feature?
 

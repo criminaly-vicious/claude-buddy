@@ -30,7 +30,7 @@ Full list in the [changelog](CHANGELOG.md).
 
 ## Install
 
-**Release (coming soon).** v0.1.0 will be published on the [Releases page](https://github.com/criminaly-vicious/claude-buddy/releases) as a small per-user installer that needs no admin rights.
+**Release (coming soon).** v1.0.0 will be published on the [Releases page](https://github.com/criminaly-vicious/claude-buddy/releases) as a small per-user installer that needs no admin rights.
 
 **From source (now).** With the [prerequisites](CONTRIBUTING.md#setup) installed:
 
@@ -72,7 +72,7 @@ Contributions are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md) (Git Fl
 
 ## Not affiliated with Anthropic
 
-Claude Buddy is an independent open-source project. It is not affiliated with or endorsed by Anthropic. The buddy is an **original** character inspired by the playful orange mascot of Claude Code; the project does not ship Anthropic's logo or artwork ([ADR-0005](.context/decisions/0005-original-character-art.md)).
+Claude Buddy is an independent open-source project. It is not affiliated with or endorsed by Anthropic. The buddy is **fan art of Clawd**, the Claude Code mascot, which is Anthropic's character: it is drawn pixel by pixel in code, and the project ships no Anthropic logos or official files. If Anthropic asks for a change, we will make it ([ADR-0013](.context/decisions/0013-clawd-character.md)).
 
 ## License
 
