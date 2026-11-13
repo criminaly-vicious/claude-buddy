@@ -236,11 +236,11 @@ The bridge stamps each event with its own receive time and applies events in arr
 apps/desktop/            Tauri app
   src/                   overlay + settings (TS)
     overlay/             render loop, buddy, physics, hover card
-    sprites/             sprite sheet loader + atlas json
+    sprites/             sprite sheet loader + generated Clawd atlas (buddy/)
+  scripts/               gen-buddy-atlas.mjs: draws Clawd, the atlas, previews and icons
   src-tauri/             Rust: bridge, registry, watcher, installer, win
 crates/buddy-hook/       hook CLI
 crates/bridge-protocol/  wire contract shared by buddy-hook and the bridge
-assets/sprites/          source .aseprite files + exported png/json
 docs/                    human docs
 .context/                agent briefs + ADRs
 ```

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { parseAtlas } from "../sprites/atlas";
-import placeholder from "../sprites/placeholder/atlas.json";
+import buddy from "../sprites/buddy/atlas.json";
 import {
   Body,
   Bounds,
@@ -17,7 +17,7 @@ import {
   ThrowClips,
 } from "./throw";
 
-const atlas = parseAtlas(placeholder);
+const atlas = parseAtlas(buddy);
 const clip = (name: string) => atlas.clips.get(name)!;
 const clips: ThrowClips = {
   grabbed: clip("grabbed"),

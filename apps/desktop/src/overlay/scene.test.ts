@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { parseAtlas } from "../sprites/atlas";
-import placeholder from "../sprites/placeholder/atlas.json";
+import buddy from "../sprites/buddy/atlas.json";
 import type { BuddyState, SessionView } from "../types";
 import { HitRegionSync } from "./hitSync";
 import { HOP_MS, Scene, SPRITE_SIZE, Viewport } from "./scene";
 
-const atlas = parseAtlas(placeholder);
+const atlas = parseAtlas(buddy);
 const viewport: Viewport = { width: 960, height: 320, devicePixelRatio: 2, scale: 2 };
 
 function view(id: string, state: BuddyState): SessionView {

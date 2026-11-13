@@ -2,11 +2,14 @@
 
 ## The buddy
 
-- Original pixel-art character: a small, chunky orange creature (warm orange `#D97757`-ish body, darker outline, two dot eyes, stubby arms and legs). Inspired by the Claude Code mascot vibe, **not** a copy of official art ([ADR-0005](../.context/decisions/0005-original-character-art.md)).
-- Base canvas **32×32 px** per frame, drawn at integer scale (1x/2x/3x) with nearest-neighbour filtering.
-- Props are separate layers in the source file: laptop, paper sheet, `!` bubble, `z` bubble, sweat drop.
-- Source files in Aseprite (`assets/sprites/buddy.aseprite`), exported to a PNG atlas + JSON (frame tags = animation names).
-- Until the real art lands (#19), `apps/desktop/src/sprites/placeholder/` holds a generated, deliberately abstract atlas with every animation tag, so the pipeline runs end to end. The overlay checks at startup that every animation it needs exists in the atlas.
+- The buddy is **Clawd**, the Claude Code mascot, drawn pixel by pixel in code (ADR-0013, which supersedes ADR-0005). No official file or image is copied, and there is no Anthropic logo or starburst.
+- Look: a block-shaped body wider than tall (20 × 12 px at rest) in terracotta orange `#D97757` with a darker outline `#7A3523` and a shade line along its bottom, two dark vertical slit eyes, an arm nub on each side and four short legs.
+- Base canvas **32×32 px** per frame, drawn at integer scale (1x/2x/3x) with nearest-neighbour filtering. Clawd stands on row 29, which leaves room above for bubbles, `z`s and stars.
+- Props are separate layers in code, drawn over Clawd: laptop (lid seen from behind, screen light on the cheeks), paper sheet, `!` bubble, `z`s, sweat drop, dizzy stars and dust puffs.
+- **Source = code, not `.aseprite`.** `apps/desktop/scripts/gen-buddy-atlas.mjs` draws every frame from rectangles (body, arms, legs) with an automatic outline and shade, then the props, and writes `apps/desktop/src/sprites/buddy/atlas.png` + `atlas.json` (Aseprite "array" JSON, frame tags = animation names). The same run writes the preview sheet `docs/img/buddy/clips.png`, the animated tour `docs/img/buddy/demo.gif` and the app icons in `apps/desktop/src-tauri/icons/`. No image library: PNG through `node:zlib` (`scripts/png.mjs`) and a small GIF encoder (`scripts/gif.mjs`). Each frame is a pure function of its clip and index, so the output is reproducible.
+- The overlay checks at startup that every animation it needs exists in the atlas.
+
+![Every clip, frame by frame](img/buddy/clips.png)
 
 ## Animations
 

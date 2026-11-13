@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import { parseAtlas } from "../sprites/atlas";
-import placeholder from "../sprites/placeholder/atlas.json";
+import buddy from "../sprites/buddy/atlas.json";
 import type { BuddyState } from "../types";
 import { AnimationController, CONTROLLER_CLIPS, plan } from "./controller";
 
-const atlas = parseAtlas(placeholder);
+const atlas = parseAtlas(buddy);
 const ms = (clip: string) => atlas.clips.get(clip)!.duration;
 
 /** No idle extras unless a test wants them. */
