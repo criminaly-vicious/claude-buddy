@@ -257,3 +257,27 @@ export function hasClassicHook(hooks: unknown): boolean {
   }
   return false
 }
+
+/**
+ * Processes that are never the long-lived Claude Code process: shells and
+ * console hosts that could sit between it and the child the mod starts.
+ */
+const NOT_CLAUDE = new Set(['sh', 'bash', 'dash', 'zsh', 'fish', 'cmd', 'conhost', 'powershell', 'pwsh'])
+
+/**
+ * The Claude Code PID from the PID lookup child's output, `"<pid> <name>"`
+ * (its parent's PID and executable name). `undefined`, so no PID is sent,
+ * when the output is unexpected, the name is missing, or the parent is a
+ * shell or a console host: the app removes a buddy 15 s after its PID exits,
+ * so a short-lived PID would make every buddy disappear.
+ */
+export function parentPid(output: string): number | undefined {
+  const match = /^\s*(\d+)\s+(.+?)\s*$/.exec(output)
+  if (match === null) return undefined
+  const pid = Number(match[1])
+  const name = fileName(match[2] ?? '')
+    .toLowerCase()
+    .replace(/\.exe$/, '')
+  if (!Number.isSafeInteger(pid) || pid <= 0 || name === '' || NOT_CLAUDE.has(name)) return undefined
+  return pid
+}

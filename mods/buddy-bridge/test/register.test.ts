@@ -21,7 +21,7 @@ function world(on: On, options: { hooks?: unknown; bridge?: string | null; fetch
     return { value: options.bridge ?? BRIDGE }
   })
   on('process.run', () => ({
-    value: { exitCode: 0, stdout: '4242\n', stderr: '', isStdoutTruncated: false, isStderrTruncated: false },
+    value: { exitCode: 0, stdout: '4242 claude\n', stderr: '', isStdoutTruncated: false, isStderrTruncated: false },
   }))
   on('session.id', () => ({ value: SESSION }))
   on('session.cwd', () => ({ value: '/home/me/demo' }))

@@ -5,6 +5,7 @@ import {
   buildEvent,
   deriveTarget,
   hasClassicHook,
+  parentPid,
   parseBridgeFile,
   REPORTED_EVENTS,
 } from '../hooks/protocol'
@@ -145,5 +146,26 @@ describe('classic hooks', () => {
     expect(hasClassicHook(hooks('notify-send done'))).toBe(false)
     expect(hasClassicHook(undefined)).toBe(false)
     expect(hasClassicHook({ Stop: 'not a list' })).toBe(false)
+  })
+})
+
+describe('the Claude Code PID', () => {
+  test('is sent only when the parent is not a shell or console host', async () => {
+    expect(parentPid('4242 claude\n')).toBe(4242)
+    expect(parentPid('4242 claude.exe\r\n')).toBe(4242)
+    expect(parentPid('4242 node.exe')).toBe(4242)
+    expect(parentPid('4242 node')).toBe(4242)
+    for (const shell of ['sh', 'bash', 'zsh', 'cmd.exe', 'CMD.EXE', 'conhost.exe', 'powershell.exe', 'pwsh.exe', 'pwsh']) {
+      expect({ shell, pid: parentPid(`4242 ${shell}`) }).toEqual({ shell, pid: undefined })
+    }
+  })
+
+  test('is not sent when the lookup output is unexpected', async () => {
+    expect(parentPid('4242')).toBe(undefined)
+    expect(parentPid('4242 ')).toBe(undefined)
+    expect(parentPid('')).toBe(undefined)
+    expect(parentPid('0 claude')).toBe(undefined)
+    expect(parentPid('abc claude')).toBe(undefined)
+    expect(parentPid('Get-CimInstance : error')).toBe(undefined)
   })
 })

@@ -16,6 +16,7 @@ import {
   EVENTS_PATH,
   hasClassicHook,
   MAX_BODY_BYTES,
+  parentPid,
   parseBridgeFile,
   type EventBody,
 } from './protocol'
@@ -119,18 +120,20 @@ function pidOf($: EngineInterface): Promise<number | undefined> {
 
 async function lookUpPid($: EngineInterface): Promise<number | undefined> {
   const windows = (await $.env.get('OS')) === 'Windows_NT'
+  // The child prints its parent's PID and executable name: the process that
+  // started it, which `parentPid` accepts only when it is not a shell.
   const argv = windows
     ? [
         'powershell.exe',
         '-NoProfile',
         '-NonInteractive',
         '-Command',
-        '(Get-CimInstance Win32_Process -Filter "ProcessId=$PID").ParentProcessId',
+        '$p = (Get-CimInstance Win32_Process -Filter "ProcessId=$PID").ParentProcessId; ' +
+          '"$p $((Get-CimInstance Win32_Process -Filter "ProcessId=$p").Name)"',
       ]
-    : ['sh', '-c', 'echo $PPID']
+    : ['sh', '-c', 'echo "$PPID $(cat /proc/$PPID/comm 2>/dev/null || ps -o comm= -p $PPID 2>/dev/null)"']
   const { exitCode, stdout } = await $.process.run(argv, { timeoutMs: 10_000 })
-  const pid = Number.parseInt(stdout.trim(), 10)
-  return exitCode === 0 && pid > 0 ? pid : undefined
+  return exitCode === 0 ? parentPid(stdout) : undefined
 }
 
 async function readBridge($: EngineInterface, now: number): Promise<Bridge | undefined> {
@@ -153,7 +156,7 @@ async function send($: EngineInterface, body: EventBody, at: number) {
   const target = await readBridge($, at)
   if (target === undefined) return
   const json = JSON.stringify(body)
-  if (json.length > MAX_BODY_BYTES) return
+  if (new TextEncoder().encode(json).length > MAX_BODY_BYTES) return
   const sent = await within(
     $,
     $.http.fetch(`http://127.0.0.1:${target.port}${EVENTS_PATH}`, {
