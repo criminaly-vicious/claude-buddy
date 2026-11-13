@@ -1,6 +1,6 @@
 # 0005. Original character art, no official branding
 
-- **Status:** Accepted
+- **Status:** Superseded by [0013](0013-clawd-character.md)
 - **Date:** 2026-10-27
 
 ## Context

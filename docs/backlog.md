@@ -46,7 +46,7 @@ Every item here exists as a GitHub issue (linked next to each ID). Issues are th
 | B-23 [#24](https://github.com/criminaly-vicious/claude-buddy/issues/24) | feature | Drag & throw physics with bounce, land, dizzy, walk back | anim | p1 |
 | B-24 [#25](https://github.com/criminaly-vicious/claude-buddy/issues/25) | spike | Focus a specific Windows Terminal tab via UI Automation (1 day) | win | p2 |
 
-## M4 — Background app & release v0.1.0
+## M4 — Background app & release v1.0.0
 
 | ID | Type | Title | Area | Pri |
 | --- | --- | --- | --- | --- |
@@ -57,3 +57,4 @@ Every item here exists as a GitHub issue (linked next to each ID). Issues are th
 | B-29 [#30](https://github.com/criminaly-vicious/claude-buddy/issues/30) | chore | Performance budget check (idle CPU < 1%, RAM < 80 MB) | core | p1 |
 | B-30 [#31](https://github.com/criminaly-vicious/claude-buddy/issues/31) | chore | NSIS installer + release workflow (tag on `main` → GitHub Release) | ci | p1 |
 | B-31 [#32](https://github.com/criminaly-vicious/claude-buddy/issues/32) | docs | User guide: install, hooks, troubleshooting, FAQ | docs | p1 |
+| B-32 [#70](https://github.com/criminaly-vicious/claude-buddy/issues/70) | feature | Claude Code mod that connects sessions to Claude Buddy | bridge | p0 |

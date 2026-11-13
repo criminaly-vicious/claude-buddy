@@ -1,6 +1,6 @@
 # Scope
 
-## MVP (v0.1.0) — in scope
+## v1.0.0 — in scope
 
 **Platform**
 - Windows 10 (21H2+) and Windows 11, x64.
@@ -43,7 +43,7 @@
 - Cloud features, accounts, telemetry.
 - Being a full session manager or log viewer.
 
-## Success criteria for v0.1.0
+## Success criteria for v1.0.0
 
 | Criterion | Target |
 | --- | --- |
@@ -76,4 +76,4 @@ Both within budget: idle CPU 0.19 % (< 1 %), RAM 66 MB peak (< 80 MB).
 | Focusing a specific Windows Terminal tab is not possible via Win32 | Click brings the window but not the tab | Accept window-level focus for MVP; document; investigate UI Automation later |
 | Transparent always-on-top WebView2 window costs CPU | Breaks "light" | Render only on change, cap at 30 fps, pause when hidden; perf budget in CI later |
 | Editing the user's `settings.json` | Breaks their config | Backup, JSON merge that preserves unknown keys, dry-run preview, one-click uninstall |
-| Character resembles official branding | Legal | Original art, no logos, disclaimer (ADR-0005) |
+| The buddy is Anthropic's Clawd | Legal: takedown, looks official | Fan art drawn in code, no logos or copied files, disclaimer, original concepts kept as a fallback (ADR-0013) |

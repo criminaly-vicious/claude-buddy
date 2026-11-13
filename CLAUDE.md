@@ -16,7 +16,7 @@ A Windows tray app (Tauri 2, Rust core, TypeScript Canvas overlay) that shows an
 - **Stay light.** Respect the perf budget in `docs/scope.md`. No polling loops in the render path.
 - **Read-only towards Claude Code.** Never send input to sessions. `buddy-hook` must never block or fail a session.
 - **Privacy.** Never log or display prompts, file contents or full commands.
-- Do not ship official Anthropic logos or artwork (ADR-0005).
+- The buddy is fan art of Clawd, drawn in code (ADR-0013). Never ship Anthropic logos, wordmarks or copied official files.
 
 ## Where things are
 
