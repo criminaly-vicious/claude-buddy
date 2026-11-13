@@ -1,8 +1,26 @@
 # Session detection
 
-How Claude Buddy learns which Claude Code sessions exist and what each one is doing. Decision record: [ADR-0002](../.context/decisions/0002-hooks-first-session-detection.md).
+How Claude Buddy learns which Claude Code sessions exist and what each one is doing. Decision records: [ADR-0002](../.context/decisions/0002-hooks-first-session-detection.md) and [ADR-0014](../.context/decisions/0014-claude-code-mod.md) (the Claude Code mod).
 
 > **Verified** by spike [#9](https://github.com/criminaly-vicious/claude-buddy/issues/9) on 2026-10-27 against Claude Code **2.1.311 on Linux**, by real capture and the [official hooks reference](https://code.claude.com/docs/en/hooks). Items marked **⚠ Windows: not verified** come from the docs only and must be checked on Windows 10/11 before the code depends on them (see [Windows checklist](#windows-checklist)). Scrubbed samples live in [`tests/fixtures/`](../tests/fixtures/README.md). Parsers must tolerate unknown fields and unknown event names: both change between versions.
+
+## The Claude Code mod
+
+The preferred way to deliver the hook events below ([ADR-0014](../.context/decisions/0014-claude-code-mod.md)). `buddy-bridge`, in [`mods/buddy-bridge/`](../mods/buddy-bridge), is a Claude Code mod: a plugin with a TypeScript hooks module. It installs with one line and needs no entry in `settings.json`:
+
+```
+/plugin install buddy-bridge --marketplace criminaly-vicious/claude-buddy
+```
+
+- **Events.** It hooks the same nine events the tray installer registers, as `classic.<Event>`, and sends the same wire events as `buddy-hook` to `POST /v1/events` ([protocol](architecture.md#bridge-protocol)). `classic.PreToolUse` delivers the tool call's envelope (`tool`, `tool_use_id`, the arguments) instead of the stdin payload, so the mod rebuilds `tool_name`/`tool_input` from it and reads `session_id` and `cwd` from `$.session`.
+- **Same rules.** Fields, limits, privacy and the `target` rules are those of `buddy-hook`, in `hooks/protocol.ts`. The cases in `mods/buddy-bridge/test/target-cases.js` are tested against both this file and `bridge_protocol::target::derive`.
+- **Never blocks.** Each hook returns `next(e)` at once and reports on the side, with a `.catch` that hands the event on if it ever fails. `bridge.json` is read through `$.fs` (cached 5 s, re-read after a refused token or a send that got no answer), the send goes through `$.http.fetch` and is given up after 300 ms, and every error is swallowed.
+- **No double reporting.** If any settings layer has a hook running `buddy-hook(.exe)` (`$.settings.read({ key: "hooks" })`), the mod stays quiet for that session and the classic hook reports. Remove the classic hooks (tray → **Uninstall hooks…**) to hand over to the mod from the next session.
+- **PID.** No `$` call answers Claude Code's PID and `CLAUDE_PID` is not set for mods, so the mod starts one child per session, `sh -c 'echo $PPID'` (on Windows `powershell.exe … Get-CimInstance Win32_Process … ParentProcessId`), and sends its parent's PID as `claude_pid`. Reports wait for it at most 2 s; without it, the session expires through the transcript TTL instead.
+- **Verified** on Linux with Claude Code 2.1.323 (`claude -p --plugin-dir mods/buddy-bridge` against a test bridge): all events arrive with the token, PID and target and without prompt or tool output, and with a classic `buddy-hook` in the settings, none. ⚠ Windows: not verified (the PowerShell PID lookup, `APPDATA`, the installed plugin).
+- **Checks:** `claude plugin validate mods/buddy-bridge` and `claude plugin test mods/buddy-bridge` (CI job `mod`).
+
+The classic hooks below stay as the fallback, for Claude Code versions or setups where mods do not load.
 
 ## Source 1: hooks (primary)
 

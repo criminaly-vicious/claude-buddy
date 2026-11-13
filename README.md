@@ -42,14 +42,20 @@ pnpm bundle   # installer in target/release/bundle/nsis/
 ## Quick start
 
 1. Start **Claude Buddy**. It lives in the system tray, by the clock.
-2. Tray menu → **Install / repair hooks…** and confirm. Claude Buddy shows what it will change in your Claude Code settings and keeps a backup.
+2. Connect Claude Code with the `buddy-bridge` mod. Type this once at the prompt of a Claude Code session:
+
+   ```
+   /plugin install buddy-bridge --marketplace criminaly-vicious/claude-buddy
+   ```
+
+   Or, without the mod: tray menu → **Install / repair hooks…** adds classic hooks to your Claude Code settings (with a backup).
 3. Start (or restart) a Claude Code session. Its buddy pops in at the corner of your screen.
 
 Everything else (settings, troubleshooting, uninstalling) is in the [user guide](docs/user-guide.md).
 
 ## Privacy
 
-- **Local only.** Claude Buddy talks to its hook over `127.0.0.1` with a random token. No telemetry, no account, no cloud.
+- **Local only.** Claude Buddy talks to its Claude Code mod or hook over `127.0.0.1` with a random token. No telemetry, no account, no cloud.
 - **No content.** It knows what *kind* of work each session does (the tool and a short target such as a file name), never your prompts, file contents or full commands.
 - **Read-only.** It never sends input to Claude Code or approves anything for you; it only observes and focuses windows.
 

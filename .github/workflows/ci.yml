@@ -44,3 +44,26 @@ jobs:
 
   installer:
     uses: ./.github/workflows/bundle.yml
+
+  mod:
+    name: claude code mod
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
+      DISABLE_AUTOUPDATER: "1"
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      # Mods are early access: pin the CLI the mod is written and tested against.
+      - run: npm install -g @anthropic-ai/claude-code@2.1.323
+
+      # The marketplace file, the manifest and the hooks module (types included).
+      - run: claude plugin validate .
+      - run: claude plugin validate mods/buddy-bridge
+      # Unit and engine tests, including the target cases shared with Rust.
+      - run: claude plugin test mods/buddy-bridge

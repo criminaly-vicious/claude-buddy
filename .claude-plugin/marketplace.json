@@ -1,0 +1,14 @@
+{
+  "name": "buddy",
+  "owner": { "name": "Claude Buddy contributors" },
+  "metadata": {
+    "description": "The Claude Code mod that connects your sessions to the Claude Buddy desktop app."
+  },
+  "plugins": [
+    {
+      "name": "buddy-bridge",
+      "source": "./mods/buddy-bridge",
+      "description": "Reports what each Claude Code session is doing to the Claude Buddy desktop app, so its buddy shows it."
+    }
+  ]
+}

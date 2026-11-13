@@ -1,6 +1,6 @@
 # 0002. Hooks first, transcript watcher as fallback
 
-- **Status:** Accepted
+- **Status:** Accepted; the connection part is superseded by [ADR-0014](0014-claude-code-mod.md) (the Claude Code mod is preferred, these hooks are its fallback)
 - **Date:** 2026-10-27
 
 ## Context
