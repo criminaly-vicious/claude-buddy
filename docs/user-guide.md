@@ -11,7 +11,7 @@ Claude Buddy puts a small animated buddy in the corner of your screen for every 
 - [Requirements](#requirements)
 - [Install](#install)
 - [First run](#first-run)
-- [Connect Claude Code (install hooks)](#connect-claude-code-install-hooks)
+- [Connect Claude Code](#connect-claude-code)
 - [What the buddies do](#what-the-buddies-do)
 - [Interacting with buddies](#interacting-with-buddies)
 - [The tray menu](#the-tray-menu)
@@ -44,16 +44,32 @@ The installer is not code-signed yet, so Windows may warn you the first time. Se
 
 1. Start **Claude Buddy** from the Start menu. There is no main window: the app lives in the system tray (the area by the clock; it may be under the `^` arrow).
 2. Click the tray icon to open its menu.
-3. Choose **Install / repair hooks…** once (next section) so buddies show exact states.
+3. Connect Claude Code once (next section) so buddies show exact states: install the Claude Code mod, or choose **Install / repair hooks…** in the tray.
 4. Start, or restart, a Claude Code session. A buddy pops in at the corner of your screen.
 
 Claude Buddy runs one copy at a time. Launching it again while it runs just shows the buddies of the copy already running.
 
-## Connect Claude Code (install hooks)
+## Connect Claude Code
 
-Claude Code can run small programs, called *hooks*, when something happens in a session: a prompt is sent, a tool starts, Claude waits for you. Claude Buddy adds a hook that tells it what each session is doing. Without hooks, buddies still appear, but their states are only approximate (see [below](#approximate-states)).
+Claude Code tells Claude Buddy what each session is doing through *hooks*: small pieces of code it runs when something happens in a session (a prompt is sent, a tool starts, Claude waits for you). There are two ways to set them up. Use one of them: without either, buddies still appear, but their states are only approximate (see [below](#approximate-states)).
 
-To install:
+### Recommended: the Claude Code mod
+
+Claude Buddy's mod, `buddy-bridge`, is a Claude Code plugin. Type this once at the prompt of a Claude Code session:
+
+```
+/plugin install buddy-bridge --marketplace criminaly-vicious/claude-buddy
+```
+
+Answer `y` to add the marketplace, then press Enter to install it for your user. Every Claude Code session you start from then on reports to Claude Buddy. Nothing is written to your `settings.json`, and the mod never slows a session down: when Claude Buddy is closed it simply sends nothing.
+
+- To remove it: `/plugin uninstall buddy-bridge`.
+- If you also have the classic hooks below installed, the mod stays quiet and the hooks keep reporting, so nothing is counted twice. Remove them with **Uninstall hooks…** in the tray to switch to the mod.
+- Mods are new in Claude Code. If your version does not load them, use the classic hooks.
+
+### Alternative: classic hooks from the tray
+
+The tray can add the hooks to your Claude Code settings instead. To install:
 
 1. Tray menu → **Install / repair hooks…**
 2. Claude Buddy first works out the change without writing anything, then shows a summary: which file it will edit (normally `C:\Users\<you>\.claude\settings.json`, or `%CLAUDE_CONFIG_DIR%\settings.json` if you set that variable), how many Claude Code events get the hook, and how many lines change. It never shows what is in the file, because it can hold secrets.
@@ -64,7 +80,7 @@ Sessions started after this show a buddy with exact states. Sessions that were a
 
 Running **Install / repair hooks…** again is safe: it says "already installed and up to date", or repairs the entries if something changed them (for example, after you moved the app).
 
-To remove the hooks, use **Uninstall hooks…** (see [Uninstall](#how-do-i-uninstall)).
+To remove these hooks, use **Uninstall hooks…** (see [Uninstall](#how-do-i-uninstall)).
 
 ## What the buddies do
 
@@ -126,7 +142,7 @@ A press that barely moves counts as a click, not a drag.
 | Item | What it does |
 | --- | --- |
 | **Hide buddies** / **Show buddies** | Hides or shows all buddies. Sessions keep being tracked while hidden |
-| **Install / repair hooks…** | Connects Claude Code to Claude Buddy ([details](#connect-claude-code-install-hooks)) |
+| **Install / repair hooks…** | Connects Claude Code to Claude Buddy with the classic hooks ([details](#alternative-classic-hooks-from-the-tray)) |
 | **Uninstall hooks…** | Removes Claude Buddy's hooks from your Claude Code settings |
 | **Settings…** | Opens the [settings window](#settings) |
 | **Quit Claude Buddy** | Closes the app. Claude Code sessions are not affected |
@@ -165,7 +181,7 @@ Settings are stored in `%APPDATA%\claude-buddy\config.json`. If that file gets d
 1. **Is Claude Buddy running?** Look for its icon in the tray (check under the `^` arrow). If it is not there, start it from the Start menu.
 2. **Are the buddies hidden?** Open the tray menu. If it says **Show buddies**, click it.
 3. **Is it a Claude Code CLI session?** Sessions in the Claude desktop app are not shown.
-4. **Are the hooks installed?** Open **Settings…** and look at the *Claude Code hooks* panel, or run **Install / repair hooks…**. If it reports "Bridge check failed", quit Claude Buddy, start it again and repeat.
+4. **Is Claude Code connected?** Check that the mod is installed (`/plugin` in Claude Code lists `buddy-bridge`), or open **Settings…** and look at the *Claude Code hooks* panel, or run **Install / repair hooks…**. If it reports "Bridge check failed", quit Claude Buddy, start it again and repeat.
 5. **Was the session started before the hooks were installed?** Restart that session. Sessions started before the app or the hooks may still appear through the transcript fallback, but only if they wrote to their transcript in the last 30 minutes.
 6. **Did you set `CLAUDE_CONFIG_DIR`?** Claude Buddy reads the same variable as Claude Code. Make sure it is set the same way for both (set it in Windows' environment variables, then restart both).
 
@@ -173,7 +189,7 @@ Settings are stored in `%APPDATA%\claude-buddy\config.json`. If that file gets d
 
 When a session has no hooks, Claude Buddy reads the session's transcript file instead (Claude Code keeps it under `.claude\projects\`). That is enough to see that a session exists and roughly what it does, but it is slower and less precise. In particular it cannot reliably tell that Claude is waiting for your permission. The hover card shows "Approximate: install hooks for exact states" for these sessions, and their buddies leave after 30 minutes without activity.
 
-Fix: run **Install / repair hooks…** and restart the session.
+Fix: [connect Claude Code](#connect-claude-code) (the mod, or **Install / repair hooks…**) and restart the session.
 
 ### Clicking a buddy does not focus the terminal
 
@@ -195,27 +211,29 @@ The installer is not code-signed yet, so Windows Defender SmartScreen may show "
 
 It only needs to know *what kind of thing* each session is doing:
 
-- From the hook: the session id, its folder, the event (prompt sent, tool started, waiting, finished), the tool name, and a short target such as a file name. The hook drops prompts, file contents, tool output and full commands before anything leaves it.
+- From the mod or the hook: the session id, its folder, the event (prompt sent, tool started, waiting, finished), the tool name, and a short target such as a file name. Both drop prompts, file contents, tool output and full commands before anything leaves Claude Code.
 - From transcripts (only for sessions without hooks): the type of each entry and the tool name. It does not keep or show any text.
 
-Everything stays on your computer. The hook talks to the app over `127.0.0.1` with a random token that only your user account can read. There is no telemetry, no account and no network access beyond that.
+Everything stays on your computer. The mod and the hook talk to the app over `127.0.0.1` with a random token that only your user account can read. There is no telemetry, no account and no network access beyond that.
 
 ### Does it change how Claude Code works?
 
-No. It only observes. It never sends input to a session or approves anything for you. The hook runs in the background and adds no delay.
+No. It only observes. It never sends input to a session or approves anything for you. The mod and the hook report in the background and add no delay. Once per session the mod starts one short helper process to learn Claude Code's process id, so Claude Buddy can tell when a session's terminal was closed.
 
 ### What does it change on my computer?
 
-- Your Claude Code `settings.json`, only when you choose **Install / repair hooks…**, with a backup kept next to it.
+- With the mod: nothing outside Claude Code's own plugins folder, where `/plugin install` puts it.
+- With the classic hooks: your Claude Code `settings.json`, only when you choose **Install / repair hooks…**, with a backup kept next to it.
 - A small file at `%APPDATA%\claude-buddy\bridge.json` that tells the hook where to reach the app while it runs.
 - Your Claude Buddy settings, in `%APPDATA%\claude-buddy\config.json`.
 
 ### How do I uninstall?
 
-1. Uninstall it from **Settings → Apps → Installed apps** (Windows 11) or **Apps & features** (Windows 10).
-2. The uninstaller asks whether to also remove Claude Buddy's hooks from your Claude Code settings. Answer **Yes**: it removes only Claude Buddy's entries and keeps a backup. If you keep them, Claude Code reports a hook error in every session, because the hook program is gone. (You can also remove them beforehand with tray menu → **Uninstall hooks…**.)
-3. Tick **Delete the application data** to also remove your Claude Buddy settings (`%APPDATA%\claude-buddy\`). The uninstaller always removes the **Start with Windows** entry.
-4. Optional: delete the `settings.json.claude-buddy-backup-*` files next to your Claude Code settings.
+1. If you use the mod, remove it in Claude Code: `/plugin uninstall buddy-bridge`.
+2. Uninstall Claude Buddy from **Settings → Apps → Installed apps** (Windows 11) or **Apps & features** (Windows 10).
+3. The uninstaller asks whether to also remove Claude Buddy's hooks from your Claude Code settings. Answer **Yes**: it removes only Claude Buddy's entries and keeps a backup. If you keep them, Claude Code reports a hook error in every session, because the hook program is gone. (You can also remove them beforehand with tray menu → **Uninstall hooks…**.)
+4. Tick **Delete the application data** to also remove your Claude Buddy settings (`%APPDATA%\claude-buddy\`). The uninstaller always removes the **Start with Windows** entry.
+5. Optional: delete the `settings.json.claude-buddy-backup-*` files next to your Claude Code settings.
 
 ### How heavy is it?
 

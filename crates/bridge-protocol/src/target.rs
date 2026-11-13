@@ -224,6 +224,23 @@ mod tests {
         assert_eq!(target("Read", json!("not an object")), None);
     }
 
+    /// The cases the Claude Code mod is tested against too, so the two
+    /// implementations of these rules cannot drift apart.
+    #[test]
+    fn shared_cases_match_the_mod() {
+        let file = include_str!("../../../mods/buddy-bridge/test/target-cases.js");
+        let (_, json) = file
+            .split_once("\nexport default")
+            .expect("a line starting with export default");
+        let cases: Vec<Value> = serde_json::from_str(json).expect("pure JSON after export default");
+        assert!(cases.len() > 20, "{} cases", cases.len());
+        for case in cases {
+            let tool = case["tool"].as_str().expect("tool");
+            let expected = case["target"].as_str().map(str::to_string);
+            assert_eq!(derive(tool, &case["input"]), expected, "{case}");
+        }
+    }
+
     #[test]
     fn long_targets_are_cut_to_the_limit() {
         let long = "q".repeat(200);

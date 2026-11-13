@@ -22,6 +22,7 @@ First release: an animated buddy in the corner of your screen for every Claude C
 - **Tray menu.** Show or hide the buddies, install, repair or remove the Claude Code hooks, open Settings, and quit. Installing the hooks shows a summary first, keeps a backup of your Claude Code settings, and checks the connection afterwards. Starting Claude Buddy again just shows the copy already running (#48, #59).
 - **Settings.** Choose the corner and monitor, the buddy size (1×, 2×, 3×), when idle buddies fall asleep, and reduce motion, and see whether the hooks are working. Changes apply right away (#60).
 - **Start with Windows and a hotkey.** Optionally start Claude Buddy when you sign in, and show or hide the buddies from anywhere with `Ctrl+Alt+B` or a hotkey of your choice (#62).
+- **Claude Code mod.** Connect Claude Code with one line, `/plugin install buddy-bridge --marketplace criminaly-vicious/claude-buddy`, without touching your Claude Code settings. The classic hooks from the tray remain as an alternative, and the two never report the same session twice (#70).
 - **Installer.** A small per-user installer that needs no admin rights. Uninstalling offers to remove the hooks from your Claude Code settings and removes the start-with-Windows entry (#63).
 - **User guide** covering installation, the hooks, every pose, troubleshooting and privacy (#61).
 
