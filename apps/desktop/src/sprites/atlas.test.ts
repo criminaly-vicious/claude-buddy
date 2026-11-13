@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import placeholder from "./placeholder/atlas.json";
+import buddy from "./buddy/atlas.json";
 import { AtlasError, frameAt, parseAtlas, requireClips } from "./atlas";
 
 /** Every animation name in docs/animation-spec.md. */
@@ -73,8 +73,8 @@ describe("parseAtlas", () => {
     ).toThrow(/twice/);
   });
 
-  it("the placeholder atlas has every animation in the spec", () => {
-    const atlas = parseAtlas(placeholder);
+  it("the buddy atlas has every animation in the spec", () => {
+    const atlas = parseAtlas(buddy);
     expect(() => requireClips(atlas, SPEC_ANIMATIONS)).not.toThrow();
     expect(() => requireClips(atlas, ["nope"])).toThrow(/nope/);
   });
