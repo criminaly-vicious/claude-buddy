@@ -4,13 +4,15 @@
 //!
 //! Inputs are normalised [`RegistryEvent`]s (adapted from hooks by the bridge
 //! and from transcripts by the watcher). Outputs are [`Change`]s, which the app
-//! forwards to the overlay as `sessions:update` / `sessions:remove` events.
-//! See docs/session-detection.md#state-machine.
+//! forwards to the overlay as `sessions:update` / `sessions:remove` /
+//! `sessions:interaction` events. See docs/session-detection.md#state-machine
+//! and #sessions-talking-to-each-other.
 
 mod tool_map;
 
 use std::collections::HashMap;
 
+use bridge_protocol::target::is_message_tool;
 use serde::Serialize;
 
 pub use tool_map::state_for_tool;
@@ -24,6 +26,13 @@ pub const EVENT_SNAPSHOT: &str = "sessions:snapshot";
 pub const EVENT_UPDATE: &str = "sessions:update";
 /// Tauri event carrying the id of a removed session.
 pub const EVENT_REMOVE: &str = "sessions:remove";
+/// Tauri event carrying an [`Interaction`]: one session messaged another.
+pub const EVENT_INTERACTION: &str = "sessions:interaction";
+
+/// How long a sent message waits for its recipient to show up.
+const MESSAGE_WINDOW_MS: Millis = 5_000;
+/// With only one other session around, it is the recipient after this long.
+const LONE_PAIR_MS: Millis = 1_500;
 
 const SUMMARY_MAX_CHARS: usize = 80;
 
@@ -51,10 +60,12 @@ pub enum Source {
 pub enum EventKind {
     SessionStarted,
     PromptSubmitted,
-    /// `summary` must already be sanitised by the source (tool name + short target).
+    /// `summary` and `target` must already be sanitised by the source
+    /// (tool name + short target; for messaging tools the recipient).
     ToolStarted {
         tool: String,
         summary: Option<String>,
+        target: Option<String>,
     },
     ToolFinished {
         tool: String,
@@ -97,6 +108,23 @@ pub struct SessionView {
 pub enum Change {
     Update(SessionView),
     Remove(String),
+    /// One session messaged another (`to`), or someone the registry could
+    /// not tell (`to: None`).
+    Interaction(Interaction),
+}
+
+/// Payload of [`EVENT_INTERACTION`].
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct Interaction {
+    pub from: String,
+    pub to: Option<String>,
+}
+
+/// A message a session sent, waiting to be paired with its recipient.
+#[derive(Clone, Debug)]
+struct Sent {
+    from: String,
+    at: Millis,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -146,6 +174,8 @@ pub struct Registry {
     sessions: HashMap<String, Session>,
     /// When the last hook event arrived, for the settings window's status.
     last_hook_event_at: Option<Millis>,
+    /// Messages whose recipient is not known yet, oldest first.
+    messages: Vec<Sent>,
 }
 
 impl Registry {
@@ -154,6 +184,7 @@ impl Registry {
             config,
             sessions: HashMap::new(),
             last_hook_event_at: None,
+            messages: Vec::new(),
         }
     }
 
@@ -188,7 +219,10 @@ impl Registry {
         }
         let config = self.config;
         let Some(session) = self.sessions.get_mut(&event.session_id) else {
-            return self.create(event);
+            let talk = self.track_messages(&event);
+            let mut changes = self.create(event);
+            changes.extend(talk);
+            return changes;
         };
 
         // Hooks are exact; once a session has them, transcript inference is noise.
@@ -215,11 +249,140 @@ impl Registry {
         if let Some(target) = target {
             changed |= session.request_state(target, event.at, &config);
         }
-        if changed {
+        let mut changes = if changed {
             vec![Change::Update(session.view.clone())]
         } else {
             Vec::new()
+        };
+        changes.extend(self.track_messages(&event));
+        changes
+    }
+
+    /// Pairs messages between sessions (docs/session-detection.md#sessions-talking-to-each-other).
+    ///
+    /// A messaging tool names its recipient (`target`): a session id or a
+    /// project name pairs at once. Otherwise the message waits: the next
+    /// other session to receive a prompt within [`MESSAGE_WINDOW_MS`] is the
+    /// recipient, or the only other session after [`LONE_PAIR_MS`]; failing
+    /// both, the interaction is reported without a recipient.
+    fn track_messages(&mut self, event: &RegistryEvent) -> Vec<Change> {
+        match &event.kind {
+            EventKind::ToolStarted { tool, target, .. } if is_message_tool(tool) => {
+                let named = target
+                    .as_deref()
+                    .and_then(|name| self.session_named(name, &event.session_id));
+                match named {
+                    Some(to) => vec![Change::Interaction(Interaction {
+                        from: event.session_id.clone(),
+                        to: Some(to),
+                    })],
+                    None => {
+                        self.messages.push(Sent {
+                            from: event.session_id.clone(),
+                            at: event.at,
+                        });
+                        Vec::new()
+                    }
+                }
+            }
+            EventKind::PromptSubmitted => {
+                let received = self.messages.iter().position(|m| {
+                    m.from != event.session_id && event.at.saturating_sub(m.at) <= MESSAGE_WINDOW_MS
+                });
+                received
+                    .map(|i| {
+                        let sent = self.messages.remove(i);
+                        Change::Interaction(Interaction {
+                            from: sent.from,
+                            to: Some(event.session_id.clone()),
+                        })
+                    })
+                    .into_iter()
+                    .collect()
+            }
+            _ => Vec::new(),
         }
+    }
+
+    /// The session (other than `from`) that `name` refers to: its id, the
+    /// start of its id (8 characters or more), or its project name.
+    fn session_named(&self, name: &str, from: &str) -> Option<String> {
+        let name = name.trim().to_lowercase();
+        if name.is_empty() {
+            return None;
+        }
+        let mut candidates: Vec<&Session> = self
+            .sessions
+            .values()
+            .filter(|s| s.view.id != from && s.view.state != BuddyState::Leaving)
+            .collect();
+        candidates.sort_by(|a, b| (a.created_at, &a.view.id).cmp(&(b.created_at, &b.view.id)));
+        let id = |s: &&Session| s.view.id.to_lowercase();
+        candidates
+            .iter()
+            .find(|s| id(s) == name)
+            .or_else(|| {
+                candidates
+                    .iter()
+                    .find(|s| name.len() >= 8 && id(s).starts_with(&name))
+            })
+            .or_else(|| {
+                candidates
+                    .iter()
+                    .find(|s| s.view.project.to_lowercase() == name)
+            })
+            .map(|s| s.view.id.clone())
+    }
+
+    /// The other live sessions a message from `from` could be for.
+    fn others(&self, from: &str) -> Vec<&Session> {
+        self.sessions
+            .values()
+            .filter(|s| s.view.id != from && s.view.state != BuddyState::Leaving)
+            .collect()
+    }
+
+    /// Settles messages that waited long enough (see [`Registry::track_messages`]).
+    fn settle_messages(&mut self, now: Millis) -> Vec<Change> {
+        let mut changes = Vec::new();
+        let mut waiting = Vec::new();
+        for sent in std::mem::take(&mut self.messages) {
+            if !self.sessions.contains_key(&sent.from) {
+                continue;
+            }
+            let age = now.saturating_sub(sent.at);
+            let others = self.others(&sent.from);
+            if age >= LONE_PAIR_MS && others.len() == 1 {
+                let to = others[0].view.id.clone();
+                changes.push(Change::Interaction(Interaction {
+                    from: sent.from,
+                    to: Some(to),
+                }));
+            } else if age >= MESSAGE_WINDOW_MS {
+                changes.push(Change::Interaction(Interaction {
+                    from: sent.from,
+                    to: None,
+                }));
+            } else {
+                waiting.push(sent);
+            }
+        }
+        self.messages = waiting;
+        changes
+    }
+
+    /// When the oldest waiting message settles, if any.
+    fn messages_deadline(&self) -> Option<Millis> {
+        self.messages
+            .iter()
+            .map(|m| {
+                if self.others(&m.from).len() == 1 {
+                    m.at + LONE_PAIR_MS
+                } else {
+                    m.at + MESSAGE_WINDOW_MS
+                }
+            })
+            .min()
     }
 
     /// Records that process `pid` of a session exited. The buddy leaves after
@@ -273,6 +436,7 @@ impl Registry {
             self.sessions.remove(&id);
             changes.push(Change::Remove(id));
         }
+        changes.extend(self.settle_messages(now));
         changes
     }
 
@@ -280,7 +444,8 @@ impl Registry {
     /// caller can sleep until then instead of polling.
     pub fn next_deadline(&self) -> Option<Millis> {
         let c = &self.config;
-        self.sessions
+        let sessions = self
+            .sessions
             .values()
             .filter_map(|s| {
                 let since = s.view.since;
@@ -296,6 +461,10 @@ impl Registry {
                     .flatten()
                     .min()
             })
+            .min();
+        [sessions, self.messages_deadline()]
+            .into_iter()
+            .flatten()
             .min()
     }
 
@@ -388,7 +557,7 @@ impl Session {
             self.view.pid = event.pid;
         }
         match &event.kind {
-            EventKind::ToolStarted { tool, summary } => {
+            EventKind::ToolStarted { tool, summary, .. } => {
                 self.view.tool = Some(tool.clone());
                 self.view.summary = summary.as_deref().map(truncate);
             }

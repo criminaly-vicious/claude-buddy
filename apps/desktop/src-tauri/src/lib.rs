@@ -17,7 +17,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use tauri::{AppHandle, Emitter, Manager, RunEvent, WindowEvent};
 
 use bridge::Bridge;
-use registry::{Change, Registry, EVENT_REMOVE, EVENT_SNAPSHOT, EVENT_UPDATE};
+use registry::{Change, Registry, EVENT_INTERACTION, EVENT_REMOVE, EVENT_SNAPSHOT, EVENT_UPDATE};
 use watcher::TranscriptWatcher;
 use win::Overlay;
 
@@ -107,6 +107,7 @@ pub fn run() {
                 let _ = match change {
                     Change::Update(view) => handle.emit(EVENT_UPDATE, view),
                     Change::Remove(id) => handle.emit(EVENT_REMOVE, id),
+                    Change::Interaction(talk) => handle.emit(EVENT_INTERACTION, talk),
                 };
             };
             // Without a bridge the app still runs; buddies just never appear.

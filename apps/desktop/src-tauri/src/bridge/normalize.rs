@@ -22,6 +22,7 @@ pub fn to_registry_event(body: EventBody, received_at: Millis) -> Option<Registr
         "UserPromptSubmit" => EventKind::PromptSubmitted,
         "PreToolUse" => EventKind::ToolStarted {
             summary: Some(tool_summary(&tool(), body.target.as_deref())),
+            target: body.target.clone(),
             tool: tool(),
         },
         "PostToolUse" | "PostToolUseFailure" => EventKind::ToolFinished { tool: tool() },
@@ -104,7 +105,8 @@ mod tests {
             kind(with_target),
             Some(EventKind::ToolStarted {
                 tool: "Read".into(),
-                summary: Some("Read · index.ts".into())
+                summary: Some("Read · index.ts".into()),
+                target: Some("index.ts".into())
             })
         );
 
@@ -116,7 +118,8 @@ mod tests {
             kind(without_target),
             Some(EventKind::ToolStarted {
                 tool: "Bash".into(),
-                summary: Some("Bash".into())
+                summary: Some("Bash".into()),
+                target: None
             })
         );
 
