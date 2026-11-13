@@ -23,8 +23,7 @@
 | `stand_up` | 4 | no | Leaving a sitting state |
 | `wait_wave` | 6 | yes | Standing, waving, `!` bubble bobbing |
 | `sleep` | 4 | yes | Curled up, `z` bubbles |
-| `walk` | 6 | yes | Walking to a new slot when the group is reordered |
-| `walk_left`, `walk_right` | 6 | yes | Walking with the eyes leading the way: strolls, visits, and back from a throw |
+| `walk_left`, `walk_right` | 6 | yes | Every walk, in three-quarter view: the front with the eyes turned towards where he goes, his side in shade behind, diagonal legs trotting together, arms swinging, a slight bob (#85). Back from a throw, up to a freed slot, strolls and visits |
 | `talk` | 6 | yes | Standing, gesturing, a `…` speech bubble: visiting another buddy |
 | `fx_talk`, `fx_reply` | 6, 4 | yes | Bubbles alone (`…`, and a heart in reply), drawn over a buddy without changing its pose |
 | `grabbed` | 4 | yes | Dangling, legs kicking |
@@ -32,6 +31,11 @@
 | `land` | 5 | no | Squash on landing; hard landings play `land_splat` then `dizzy` |
 | `dizzy` | 6 | no | Stars circling, then shakes it off |
 | `leave` | 8 | no | Waves goodbye, crouches and vanishes in a puff; the last frame is empty |
+| `mini_work` | 8 | yes | A mini Clawd (a subagent) on the stack: arms pumping in turn, a blink. 250 ms frames |
+| `mini_balance` | 4 | yes | A mini riding a buddy that walks or is held: arms out, swaying |
+| `mini_pop`, `mini_poof` | 5, 5 | no | A mini popping in from a small puff, and vanishing in one; the last poof frame is empty |
+| `mini_fly`, `mini_land`, `mini_jump` | 4, 3, 1 | yes, no, yes | A scattered mini tumbling, landing, and hopping back onto the stack |
+| `mini_walk_left`, `mini_walk_right` | 6 | yes | A mini walking back, in three-quarter view like Clawd |
 
 ### State → animation
 
@@ -67,7 +71,7 @@ Implemented in `apps/desktop/src/overlay/controller.ts`:
 
 Implemented in `apps/desktop/src/overlay/layout.ts` and `scene.ts`:
 - **Order:** creation order, oldest touching the corner, mirrored for left and top corners; "forward" means away from the screen edge.
-- **Leaving:** when a buddy leaves, the ones behind it play `walk` and move up one slot at 64 sprite px/s. Positions are kept in sprite pixels along the floor, so resizing the window or changing DPI never makes anyone walk.
+- **Leaving:** when a buddy leaves, the ones behind it walk up one slot at 64 sprite px/s, facing the way they go (`walk_left` / `walk_right`). Positions are kept in sprite pixels along the floor, so resizing the window or changing DPI never makes anyone walk.
 - **Overflow:** the 10 oldest stay visible and the newest go behind the chip. Hovering the chip shows everyone; the group collapses 1.5 s after the pointer leaves it. Hidden buddies reappear in place, without walking.
 - **Window size:** the overlay window resizes around the group from its corner (`set_overlay_content_size`), instead of keeping a fixed size. It always keeps room for the hover balloon (280 × 62 CSS px plus its tail), so opening the balloon never resizes the window.
 - **Hit regions:** only Clawd's part of each 32×32 frame (28 × 21 sprite px, arms up included) takes the mouse, so the empty air above him stays click-through.
@@ -81,6 +85,35 @@ Implemented in `apps/desktop/src/overlay/excursion.ts` (`Stroll`, pure) and `sce
 - **How:** 40–120 sprite px towards the screen centre at 40 sprite px/s with `walk_left` / `walk_right`, a 1.2–2.8 s look around (`idle_look`), then back to its slot (following it if it moved).
 - **Called back:** if its session gets work meanwhile, it turns around at once, walks back and sits down.
 - **Window:** while someone strolls, the overlay grows to a strip along the floor (`overlay_expand` with `"floor"`: the work area's width, the corner area's height) and shrinks back when everyone is home.
+
+## Subagents
+
+Each running subagent shows as a mini Clawd standing on its session's buddy, stacked in start order with the oldest at the bottom (docs/session-detection.md#subagents).
+
+![The tour: halfway through, two subagents pop onto Clawd while he works](img/buddy/demo.gif)
+
+Implemented in `apps/desktop/src/overlay/minis.ts` (`MiniStack`, pure) and `scene.ts`:
+- **Look:** a mini is drawn at the same pixel size as Clawd and about half as big (a 10 × 6 body), in a 32 × 32 frame of its own.
+- **Stack:**
+  - The first mini's feet stand on the buddy's head, and each next one stands on the head below it.
+  - Each atlas frame says where the head is: a `head` row, not one of Aseprite's own fields, which the generator computes from the body's pixels. So the stack follows the buddy as it breathes, sits, stands, stretches or hops.
+  - At most 5 minis show. The buddy's balloon counts every subagent ("3 subagents working").
+- **Coming and going:**
+  - A new subagent's mini pops in on top of the stack (`mini_pop`), then works (`mini_work`).
+  - A stopped one vanishes in a puff (`mini_poof`), and the minis above it drop a level in 140 ms.
+  - The buddy leaving takes them all.
+- **Riding:** the stack stays on the buddy while it walks to a freed slot, strolls, visits or is held, and the minis balance (`mini_balance`).
+- **Thrown:** when the buddy is let go, the minis fly off and scatter. Each gets 60 % of the buddy's speed plus a random push, up to 260 CSS px/s sideways and 350–700 CSS px/s up (at 2×). Each then flies with the same physics as Clawd, lands (`mini_land`) and walks back at 48 sprite px/s (`mini_walk_left` / `mini_walk_right`).
+- **Same order, always:**
+  - Back from a throw, the minis wait in a line beside the buddy's slot, away from the corner, in stack order.
+  - Once the buddy is home again, they hop back on one at a time, bottom first: a 360 ms hop with an 8 sprite px arc (`mini_jump`).
+  - A mini whose turn has not come waits, even if it got back first. A subagent that starts meanwhile queues behind them.
+  - The overlay stays grown to the work area until every mini is back on the stack.
+- **Hover and click:** each mini has its own hit region (14 × 11 sprite px).
+  - Hovering one opens a balloon about its subagent: what it does ("Running cargo"), then its type, the project and for how long ("general-purpose subagent · claude-buddy · 3s").
+  - The buddy's own balloon goes over the whole stack.
+  - A click on a mini focuses its session's terminal. A drag on a mini picks up its buddy.
+- **Window:** the overlay keeps room for the tallest stack above the group: 9 sprite px per mini beyond the first.
 
 ## Sessions talking to each other
 
@@ -99,7 +132,7 @@ Implemented in `excursion.ts` (`Visit`, pure) and `scene.ts`:
 | Click | Focus the session's terminal window; buddy does a small happy hop |
 | Double-click | Buddy does a random silly animation (spin, jump) |
 | Drag | `grabbed`; buddy follows the cursor with a little lag (spring) |
-| Release with velocity | `fly` with gravity (≈ 2000 px/s²), bounces off screen edges (restitution 0.4), friction on floor; `land` / `land_splat` → `dizzy` on hard landings; then `walk` back to slot and resume state |
+| Release with velocity | `fly` with gravity (≈ 2000 px/s²), bounces off screen edges (restitution 0.4), friction on floor; `land` / `land_splat` → `dizzy` on hard landings; then walk back to slot and resume state. Its minis scatter and come back (see [Subagents](#subagents)) |
 | Release without velocity | Drops, `land`, walks back |
 | Right-click | Context menu: Focus, Copy session id, Hide this buddy |
 
@@ -111,7 +144,7 @@ Implemented in `apps/desktop/src/overlay/throw.ts` (physics and phases, pure), `
 - **Click or drag:** a press on a buddy that moves more than 4 CSS px is a drag; one that stays put is a click (focus, see above). Drags only start on a buddy's hit region.
 - **Held:** `grabbed` loops; the buddy hangs from the point where it was caught and follows the pointer on a critically damped spring (stiffness 600/s²), so it lags a little without wobbling.
 - **Thrown:** on release it keeps the spring's velocity (capped at 4000 px/s) and plays `fly`: gravity 2000 px/s², bounces off the work-area edges with restitution 0.4, and on the floor a bounce slower than 60 px/s settles and friction (1600 px/s²) slides it to a stop. A release without velocity just drops.
-- **Landing:** `land`, or `land_splat` then `dizzy` when the first floor impact was at least 1400 px/s (a fall of about 490 px). Then it plays `walk` in a straight line back to its slot at the normal walking speed, following the slot if it moves meanwhile, and goes back to its session's animation, which kept running underneath.
+- **Landing:** `land`, or `land_splat` then `dizzy` when the first floor impact was at least 1400 px/s (a fall of about 490 px). Then it walks in a straight line back to its slot at the normal walking speed, facing the way it goes (`walk_left` / `walk_right`), following the slot if it moves meanwhile, and goes back to its session's animation, which kept running underneath.
 - **Physics:** fixed 120 Hz steps on a grid that starts at the grab, in CSS px relative to the group's corner area, separate from drawing. The path depends only on the input timestamps, not on the redraw rate. The render loop runs at frame rate only while someone is held, flying or walking back, and sleeps again after.
 - **Window:** on the first drag the backend expands the overlay to the work area (`overlay_expand` returns where the corner area sits inside it), so the group stays put on screen while the window grows; it is drawn in that area whenever the canvas has the expanded size. Everything outside the buddies stays click-through. When the last buddy is back in its slot, `overlay_restore` shrinks the window again. Until the expansion lands, a throw stays inside the corner area.
 - A buddy can be caught again in mid-air, or while it strolls or visits. The hover balloon does not open on a thrown buddy.
@@ -143,8 +176,9 @@ The overlay draws only when a frame changes: the render loop sleeps until the sc
 
 - **At rest** (idle, working, researching, waiting, sleeping, with or without idle extras), every frame lasts a multiple of 125 ms (`idle` breathes in 1 s frames with a 125 ms blink, `sleep` 500 ms). The controller puts loops on one shared clock, so all buddies change frames on the same 125 ms steps: a resting group redraws at most 8 times a second however many buddies there are.
 - **Only when the picture changes:** when the atlas is generated, a frame that looks the same as the one before it is merged into it (a longer frame), so a buddy holding a pose does not cause redraws. Measured over a simulated minute: one idle buddy redraws about twice a second, three about 4 times, eight about 7; a sleeping group twice; a working one 8.
+- **Minis** on a stack change frames on the same clock (`mini_work` every 250 ms), so a stack adds at most 4 redraws a second.
 - **Walking** (strolls, visits, walking up to a freed slot): 20 redraws a second, only while someone walks.
-- **Held, flying or hopping:** 30 a second, only while that lasts.
+- **Held, flying or hopping** (buddies and scattered minis): 30 a second, only while that lasts.
 - A frame change is never asked for at the current instant, so rounding cannot make the loop draw the same frame twice.
 - One-shot clips (`spawn`, transitions, `leave`) start when their event arrives and run at their own frame times.
 

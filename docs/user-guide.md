@@ -95,10 +95,20 @@ Each buddy acts out what its session is doing:
 | Idle: Claude finished its turn | Stands around, now and then looks around, stretches or scratches, and every few minutes takes a [short stroll](#strolls) |
 | Idle for a while (5 minutes by default, [adjustable](#settings)) | Curls up and sleeps (`z` bubbles). Wakes up on the next activity |
 | Session ended | Waves goodbye and walks off |
+| Running subagents | A [mini Clawd](#subagents-mini-clawds) per subagent stands on its head |
 
 Buddies line up side by side in a corner of the screen (bottom right unless you [change it](#settings)), oldest closest to the corner. Each one keeps its place until its session ends; then the others walk up to close the gap. Up to 10 are shown. With more sessions, the extra buddies collapse into a `+N` chip; hover over it to see everyone.
 
 A buddy also leaves if its session's process disappears for 15 seconds, for example when you close the terminal window without exiting Claude Code.
+
+### Subagents: mini Clawds
+
+When a session hands work to subagents (Claude Code's Agent tool, for example an Explore subagent), each one shows up as a mini Clawd standing on its buddy's head. They stack up in the order the subagents started, the oldest at the bottom, and keep busy while they work. When a subagent finishes, its mini vanishes in a puff and the ones above it drop down.
+
+- Rest the pointer on a mini to see what that subagent is doing, its type and for how long. The buddy's own balloon says how many subagents are working for it.
+- Throw the buddy and its minis fly off in all directions. Each lands, walks back and waits beside the buddy, then they hop back on one at a time, always in the same order.
+- Up to 5 minis show on one buddy.
+- Subagents need the mod or the hooks. If you installed the classic hooks before this version, run **Install / repair hooks…** from the tray menu once. Until then minis still show up, but they may linger for a minute and a half after their subagent finishes.
 
 ### Strolls
 
@@ -143,7 +153,7 @@ This is best effort:
 
 ### Drag and throw
 
-Grab a buddy and drag it: it dangles and follows your pointer with a little lag. Let go while moving and it flies, bounces off the screen edges and lands. Throw it hard and it lands with a splat and is dizzy for a moment. Then it walks back to its place and carries on with what its session is doing. You can catch it again in mid-air.
+Grab a buddy and drag it: it dangles and follows your pointer with a little lag. Let go while moving and it flies, bounces off the screen edges and lands. Throw it hard and it lands with a splat and is dizzy for a moment. Then it walks back to its place, turned towards where it goes, and carries on with what its session is doing. You can catch it again in mid-air. Any [mini Clawds](#subagents-mini-clawds) on its head scatter and find their way back.
 
 A press that barely moves counts as a click, not a drag.
 
@@ -182,7 +192,7 @@ Tray menu → **Settings…** opens the settings window. Changes apply right awa
 | Start with Windows | Starts Claude Buddy when you sign in. Per user, no admin needed. It is the same switch as Claude Buddy in Task Manager → **Startup apps**: turning it off there shows here, and turning it on here enables it there again | Off |
 | Show / hide hotkey | Shows or hides the buddies from anywhere. Click the box and press the keys: at least one of Ctrl, Alt or Win (Shift can be added), plus a letter, a digit, F1–F24 or Space. **None** turns it off. If another app or Windows already uses the combination, a message says so: pick another | `Ctrl+Alt+B` |
 
-**Claude Code hooks:** a status panel that says whether the hooks are installed, when the last hook event arrived, and which Claude Code settings file is used. Press **Refresh** to check again. Installing, repairing and removing the hooks is done from the tray menu.
+**Claude Code hooks:** a status panel that says whether the hooks are installed (or out of date), when the last hook event arrived, and which Claude Code settings file is used. Press **Refresh** to check again. Installing, repairing and removing the hooks is done from the tray menu.
 
 Settings are stored in `%APPDATA%\claude-buddy\config.json`. If that file gets damaged, Claude Buddy starts with the defaults and keeps the broken file as `config.json.invalid` instead of overwriting it.
 
@@ -223,7 +233,7 @@ The installer is not code-signed yet, so Windows Defender SmartScreen may show "
 
 It only needs to know *what kind of thing* each session is doing:
 
-- From the mod or the hook: the session id, its folder, the event (prompt sent, tool started, waiting, finished), the tool name, and a short target such as a file name. For a message to another session, the target is only who it is for. Both drop prompts, message text, file contents, tool output and full commands before anything leaves Claude Code.
+- From the mod or the hook: the session id, its folder, the event (prompt sent, tool started, waiting, finished), the tool name, and a short target such as a file name. For a message to another session, the target is only who it is for. For a subagent, only its id and type (such as `Explore`). Both drop prompts, message text, subagents' answers, file contents, tool output and full commands before anything leaves Claude Code.
 - From transcripts (only for sessions without hooks): the type of each entry and the tool name. It does not keep or show any text.
 
 Everything stays on your computer. The mod and the hook talk to the app over `127.0.0.1` with a random token that only your user account can read. There is no telemetry, no account and no network access beyond that.

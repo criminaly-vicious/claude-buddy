@@ -85,6 +85,22 @@ class Layer {
     }
     return out;
   }
+  /** Flipped left to right. */
+  mirrored() {
+    const out = new Layer();
+    for (let y = 0; y < SIZE; y++) {
+      for (let x = 0; x < SIZE; x++) out.set(SIZE - 1 - x, y, this.get(x, y));
+    }
+    return out;
+  }
+  /** Turned a quarter clockwise around the point (`cx`, `cy`). */
+  turnedAbout(cx, cy) {
+    const out = new Layer();
+    for (let y = 0; y < SIZE; y++) {
+      for (let x = 0; x < SIZE; x++) out.set(cx + (cy - y), cy + (x - cx), this.get(x, y));
+    }
+    return out;
+  }
   shifted(dx, dy) {
     const out = new Layer();
     for (let y = 0; y < SIZE; y++) {
@@ -242,6 +258,207 @@ function clawd(o = {}) {
   return { layer, box: { x: bx, y: by, w, h }, eye: { lx, rx, y: ey } };
 }
 
+/**
+ * Clawd in three-quarter view, turned to the right: the front, with the eyes,
+ * on the right, and his left side receding in shade, a pixel shorter at its
+ * far edge. The walk to the left is this mirrored. Options:
+ * - dy: offset (the bob of a step)
+ * - legs: lift in px of [near back, near front, far back, far front]; a
+ *   lifted leg also reaches a pixel forward
+ * - swing: -1..1, the arms swinging against the legs
+ * - eyes: "open" (looking where he goes) or "closed"
+ */
+function clawd3q(o = {}) {
+  const h = 12;
+  const side = 5;
+  const front = 15;
+  const w = side + front;
+  const legH = 3;
+  const bx = Math.round((SIZE - w) / 2);
+  const by = FLOOR - legH - h + (o.dy ?? 0);
+  const fx = bx + side;
+  const shape = new Shape();
+  // The side: its far edge a pixel shorter at the top and the bottom.
+  shape.rect(bx, by + 1, 1, h - 2);
+  shape.rect(bx + 1, by, side - 1, h);
+  shape.rect(fx, by, front, h);
+
+  // Legs at the corners: the near ones (his left side) in front, the far
+  // ones a pixel higher and in shade, peeking out between and beyond.
+  const lift = o.legs ?? [0, 0, 0, 0];
+  const legs = [
+    { x: bx + 1, far: false },
+    { x: fx + 1, far: false },
+    { x: fx + 8, far: true },
+    { x: fx + front - 3, far: true },
+  ];
+  const farLegs = [];
+  legs.forEach(({ x, far }, i) => {
+    const up = lift[i];
+    const lx = x + (up > 0 ? 1 : 0);
+    const top = by + h;
+    const bottom = FLOOR - (far ? 1 : 0) - up;
+    if (far) farLegs.push({ x: lx, top, bottom });
+    else shape.rect(lx, top, 2, Math.max(1, bottom - top));
+  });
+
+  const layer = shape.paint();
+  // The side in shade.
+  for (let y = by; y < by + h; y++) {
+    for (let x = bx; x < fx; x++) if (shape.has(x, y)) layer.set(x, y, C.shade);
+  }
+
+  // Arms swing against the legs. The near one is in front of his side, the
+  // far one peeks out past the front, in shade.
+  const swing = o.swing ?? 0;
+  const armY = by + 4;
+  const nearArm = new Shape().rect(bx - 1 + swing, armY, 3, 3);
+  nearArm.paint().over(layer);
+  const farX = fx + front + 1 - swing;
+  for (let y = armY; y < armY + 2; y++) {
+    layer.set(farX - 1, y, C.shade);
+    layer.set(farX, y, C.shade);
+    layer.set(farX + 1, y, C.outline);
+  }
+  layer.set(farX - 1, armY - 1, C.outline);
+  layer.set(farX, armY - 1, C.outline);
+  layer.set(farX - 1, armY + 2, C.outline);
+  layer.set(farX, armY + 2, C.outline);
+  for (const { x, top, bottom } of farLegs) {
+    for (let y = top; y < Math.max(top + 1, bottom); y++) {
+      for (const xx of [x, x + 1]) if (!layer.get(xx, y) || layer.get(xx, y) === C.outline) layer.set(xx, y, C.shade);
+    }
+    for (let y = top; y < Math.max(top + 1, bottom); y++) {
+      for (const xx of [x - 1, x + 2]) if (!layer.get(xx, y)) layer.set(xx, y, C.outline);
+    }
+    const end = Math.max(top + 1, bottom);
+    for (const xx of [x, x + 1]) if (!layer.get(xx, end)) layer.set(xx, end, C.outline);
+  }
+
+  // Eyes on the front, looking ahead; the far one narrower.
+  const ey = by + 3;
+  const eyes = o.eyes ?? "open";
+  for (const [x, width] of [
+    [fx + 4, 2],
+    [fx + 10, 1],
+  ]) {
+    if (eyes === "closed") {
+      for (let i = -1; i < width + 1; i++) layer.set(x + i, ey + 3, C.eye);
+    } else {
+      for (let i = 0; i < 4; i++) {
+        for (let j = 0; j < width; j++) layer.set(x + j, ey + i, C.eye);
+      }
+    }
+  }
+  return { layer, box: { x: bx, y: by, w, h } };
+}
+
+// --- Mini Clawd --------------------------------------------------------------------
+
+/**
+ * A mini Clawd, a running subagent: the same pixels as Clawd, half his size
+ * (10 × 6 body), standing on the floor at the cell's centre. The overlay
+ * stacks minis on their buddy's head. Options:
+ * - dy: offset; pose: "stand" or "air" (legs tucked)
+ * - arms: { left, right } each "down", "up" or "out"
+ * - eyes: "open", "closed", "wide"
+ * - w, h: squash and stretch
+ */
+function mini(o = {}) {
+  const w = o.w ?? 10;
+  const h = o.h ?? 6;
+  const pose = o.pose ?? "stand";
+  const legH = pose === "stand" ? 2 : 0;
+  const bx = Math.round((SIZE - w) / 2) + (o.dx ?? 0);
+  const by = FLOOR - legH - h + (o.dy ?? 0) - (pose === "air" ? 2 : 0);
+  const shape = new Shape().rect(bx, by, w, h);
+  const lift = o.legs ?? [0, 0, 0, 0];
+  const legX = [bx + 1, bx + 3, bx + w - 4, bx + w - 2];
+  if (pose === "stand") legX.forEach((x, i) => shape.rect(x, by + h, 1, Math.max(1, legH - lift[i])));
+  else legX.forEach((x) => shape.rect(x, by + h, 1, 1));
+  const arms = { left: "down", right: "down", ...(o.arms ?? {}) };
+  const armY = by + 2;
+  for (const side of ["left", "right"]) {
+    const kind = arms[side];
+    const outer = side === "left" ? bx - 2 : bx + w;
+    if (kind === "down") shape.rect(outer, armY, 2, 2);
+    if (kind === "out") shape.rect(side === "left" ? bx - 3 : bx + w + 1, armY - 1, 2, 1);
+    if (kind === "up") shape.rect(side === "left" ? bx - 1 : bx + w, by - 2, 1, 3);
+  }
+  const layer = shape.paint();
+  const eyes = o.eyes ?? "open";
+  const ey = by + 1;
+  for (const x of [bx + Math.round(w * 0.2), bx + w - 1 - Math.round(w * 0.2)]) {
+    if (eyes === "closed") {
+      layer.set(x, ey + 1, C.eye);
+      layer.set(x + (x < bx + w / 2 ? -1 : 1), ey + 1, C.eye);
+    } else {
+      for (let i = eyes === "wide" ? -1 : 0; i < 2; i++) layer.set(x, ey + i, C.eye);
+    }
+  }
+  return { layer, box: { x: bx, y: by, w, h } };
+}
+
+/** A mini Clawd in three-quarter view, walking right (see `clawd3q`). */
+function mini3q(o = {}) {
+  const h = 6;
+  const side = 3;
+  const front = 7;
+  const bx = Math.round((SIZE - side - front) / 2);
+  const by = FLOOR - 2 - h + (o.dy ?? 0);
+  const fx = bx + side;
+  const shape = new Shape();
+  shape.rect(bx, by + 1, 1, h - 2);
+  shape.rect(bx + 1, by, side - 1, h);
+  shape.rect(fx, by, front, h);
+  const lift = o.legs ?? [0, 0, 0, 0];
+  // Near legs only; the far ones hide behind them at this size.
+  [bx + 1, fx + 1, fx + 4].forEach((x, i) => {
+    const up = [lift[0], lift[1], lift[3]][i];
+    shape.rect(x + (up > 0 ? 1 : 0), by + h, 1, Math.max(1, 2 - up));
+  });
+  const layer = shape.paint();
+  for (let y = by; y < by + h; y++) {
+    for (let x = bx; x < fx; x++) if (shape.has(x, y)) layer.set(x, y, C.shade);
+  }
+  // Too small for swinging arms: just the far one, a nub past the front.
+  layer.set(fx + front, by + 3, C.shade);
+  layer.set(fx + front + 1, by + 3, C.outline);
+  for (const x of [fx + 2, fx + 5]) {
+    layer.set(x, by + 1, C.eye);
+    layer.set(x, by + 2, C.eye);
+  }
+  return { layer, box: { x: bx, y: by, w: side + front, h } };
+}
+
+/** A small puff for a mini popping in or out (t 0..2). */
+function miniPoof(layer, t) {
+  const blobs = [
+    [16, 26, 3],
+    [12, 27, 2],
+    [20, 27, 2],
+    [14, 23, 2],
+    [18, 23, 2],
+  ];
+  const grow = [0, 1, 2][t];
+  const colours = [C.dust, C.dust, C.dustLight];
+  for (const [cx, cy, r] of blobs) {
+    const rr = r + grow - (t === 2 ? 1 : 0);
+    for (let y = cy - rr; y <= cy + rr; y++) {
+      for (let x = cx - rr; x <= cx + rr; x++) {
+        const d = (x - cx) ** 2 + (y - cy) ** 2;
+        if (d <= rr * rr && (t < 2 || d >= (rr - 1) * (rr - 1))) layer.set(x, y, colours[t]);
+      }
+    }
+  }
+}
+
+function miniPoofOnly(t) {
+  const layer = new Layer();
+  miniPoof(layer, t);
+  return layer;
+}
+
 // --- Props ------------------------------------------------------------------------
 
 /** The laptop lid's back, below the eyes of a sitting Clawd; `glowOn` lights the face. */
@@ -384,13 +601,14 @@ function poofOnly(t) {
   return layer;
 }
 
-const walkLegs = [
-  [1, 0, 1, 0],
-  [2, 0, 2, 0],
-  [1, 0, 1, 0],
-  [0, 1, 0, 1],
-  [0, 2, 0, 2],
-  [0, 1, 0, 1],
+/** The six steps of the three-quarter walk: diagonal legs move together. */
+const TROT = [
+  { legs: [0, 1, 1, 0], swing: 1, dy: 0 },
+  { legs: [0, 2, 2, 0], swing: 1, dy: -1 },
+  { legs: [0, 1, 1, 0], swing: 0, dy: 0 },
+  { legs: [1, 0, 0, 1], swing: -1, dy: 0 },
+  { legs: [2, 0, 0, 2], swing: -1, dy: -1 },
+  { legs: [1, 0, 0, 1], swing: 0, dy: 0 },
 ];
 
 /**
@@ -515,7 +733,6 @@ const CLIPS = [
       return c;
     }),
   ],
-  ["walk", 100, walkLegs.map((legs, i) => () => clawd({ legs, dy: i % 3 === 1 ? -1 : 0 }).layer)],
   [
     "grabbed",
     100,
@@ -589,9 +806,75 @@ const CLIPS = [
       () => poofOnly(2),
     ],
   ],
-  // Walking towards a side (strolls and visits): the eyes lead.
-  ["walk_left", 100, walkLegs.map((legs, i) => () => clawd({ legs, dy: i % 3 === 1 ? -1 : 0, eyes: "left" }).layer)],
-  ["walk_right", 100, walkLegs.map((legs, i) => () => clawd({ legs, dy: i % 3 === 1 ? -1 : 0, eyes: "right" }).layer)],
+  // Walking towards a side, in three-quarter view: back to his place, closing
+  // a gap, strolls and visits. Legs trot in diagonal pairs, arms swing.
+  ["walk_left", 100, TROT.map((step) => () => clawd3q(step).layer.mirrored())],
+  ["walk_right", 100, TROT.map((step) => () => clawd3q(step).layer)],
+  // Mini Clawds: a subagent each, stacked on their buddy (#84).
+  [
+    "mini_work",
+    250,
+    // Busy: arms pumping in turn, and a blink.
+    ["l", "n", "r", "n", "l", "n", "r", "b"].map((f) => () =>
+      mini({
+        arms: { left: f === "l" ? "up" : "down", right: f === "r" ? "up" : "down" },
+        eyes: f === "b" ? "closed" : "open",
+      }).layer,
+    ),
+  ],
+  [
+    "mini_balance",
+    250,
+    // Riding on a walking buddy: arms out, swaying.
+    [-1, 0, 1, 0].map((dx) => () => mini({ dx, arms: { left: "out", right: "out" }, eyes: "wide" }).layer),
+  ],
+  [
+    "mini_pop",
+    100,
+    [
+      () => miniPoofOnly(0),
+      () => mini({ w: 6, h: 3, eyes: "closed", arms: { left: "none", right: "none" } }).layer.over(miniPoofOnly(1)),
+      () => mini({ w: 8, h: 8, dy: -2, arms: { left: "up", right: "up" }, eyes: "wide" }).layer,
+      () => mini({ w: 12, h: 4 }).layer,
+      () => mini({ arms: { left: "up", right: "up" } }).layer,
+    ],
+  ],
+  [
+    "mini_poof",
+    100,
+    [
+      () => mini({ w: 12, h: 4, eyes: "closed" }).layer,
+      () => mini({ w: 6, h: 3, eyes: "closed", arms: { left: "none", right: "none" } }).layer.over(miniPoofOnly(0)),
+      () => miniPoofOnly(1),
+      () => miniPoofOnly(2),
+      () => new Layer(),
+    ],
+  ],
+  [
+    "mini_fly",
+    80,
+    [0, 1, 2, 3].map((t) => () => {
+      let c = mini({ pose: "air", dy: -3, arms: { left: "out", right: "out" }, eyes: "wide" }).layer;
+      for (let i = 0; i < t; i++) c = c.turnedAbout(16, 22);
+      return c;
+    }),
+  ],
+  [
+    "mini_land",
+    80,
+    [
+      () => mini({ w: 12, h: 4, eyes: "closed" }).layer,
+      () => mini({ w: 11, h: 5 }).layer,
+      () => mini({ h: 7 }).layer,
+    ],
+  ],
+  [
+    "mini_jump",
+    100,
+    [() => mini({ pose: "air", arms: { left: "up", right: "up" }, eyes: "wide" }).layer],
+  ],
+  ["mini_walk_left", 100, TROT.map((step) => () => mini3q(step).layer.mirrored())],
+  ["mini_walk_right", 100, TROT.map((step) => () => mini3q(step).layer)],
   [
     "talk",
     140,
@@ -636,6 +919,19 @@ for (const [name, duration, makers] of CLIPS) {
   frameTags.push({ name, from, to: frames.length - 1, direction: "forward" });
 }
 
+/**
+ * The top row of a frame's body, outline included, in its middle columns:
+ * where a mini Clawd stands on its head. Props, raised arms and bubbles do
+ * not count. `null` for frames without a body (a puff).
+ */
+function headOf(layer) {
+  const body = new Set([C.body, C.shade, C.outline]);
+  for (let y = 0; y < SIZE; y++) {
+    for (let x = 12; x <= 19; x++) if (body.has(layer.get(x, y))) return y;
+  }
+  return null;
+}
+
 const COLUMNS = 8;
 const atlasW = COLUMNS * SIZE;
 const atlasH = Math.ceil(frames.length / COLUMNS) * SIZE;
@@ -674,6 +970,8 @@ const atlasJson = {
     spriteSourceSize: { x: 0, y: 0, w: SIZE, h: SIZE },
     sourceSize: { w: SIZE, h: SIZE },
     duration: f.duration,
+    // Not Aseprite's: where minis stand on this frame (see headOf).
+    ...(headOf(f.layer) === null ? {} : { head: headOf(f.layer) }),
   })),
   meta: {
     app: "claude-buddy gen-buddy-atlas.mjs",
@@ -762,8 +1060,10 @@ function clipsSheet() {
 
 function demoGif() {
   const scale = 4;
+  // Room above Clawd for minis stacked on his head.
+  const top = 16;
   const w = SIZE * scale;
-  const h = SIZE * scale;
+  const h = (SIZE + top) * scale;
   const bg = hex("#F4F1EC");
   const palette = [bg];
   const index = (c) => {
@@ -779,7 +1079,13 @@ function demoGif() {
     ["talk", 2],
     ["walk_right", 3],
     ["sit_down", 1],
-    ["work_type", 3],
+    ["work_type", 1],
+    // Two subagents: minis pop onto his head, work, and go.
+    ["work_type", 1, ["mini_pop"]],
+    ["work_type", 1, ["mini_work", "mini_pop"]],
+    ["work_type", 3, ["mini_work", "mini_work"]],
+    ["work_type", 1, ["mini_work", "mini_poof"]],
+    ["work_type", 1, ["mini_poof"]],
     ["stand_up", 1],
     ["sit_down", 1],
     ["research_read", 2],
@@ -795,18 +1101,37 @@ function demoGif() {
     ["leave", 1],
   ];
 
+  const tag = (name) => frameTags.find((f) => f.name === name);
   const out = [];
-  for (const [tag, loops] of tour) {
-    const t = frameTags.find((f) => f.name === tag);
+  for (const [name, loops, minis = []] of tour) {
+    const t = tag(name);
     for (let l = 0; l < loops; l++) {
       for (let n = t.from; n <= t.to; n++) {
         const indices = new Uint8Array(w * h);
-        const layer = frames[n].layer;
-        for (let y = 0; y < h; y++) {
-          for (let x = 0; x < w; x++) {
-            const c = layer.get(Math.floor(x / scale), Math.floor(y / scale));
-            indices[y * w + x] = c ? index(c) : 0;
+        const paint = (layer, oy) => {
+          for (let y = 0; y < SIZE; y++) {
+            for (let x = 0; x < SIZE; x++) {
+              const c = layer.get(x, y);
+              const py = y + oy + top;
+              if (!c || py < 0) continue;
+              for (let sy = 0; sy < scale; sy++) {
+                for (let sx = 0; sx < scale; sx++) indices[(py * scale + sy) * w + x * scale + sx] = index(c);
+              }
+            }
           }
+        };
+        paint(frames[n].layer, 0);
+        // Each mini stands on the head below it (as the overlay stacks them).
+        let head = headOf(frames[n].layer);
+        let oy = 0;
+        for (const mini of minis) {
+          const m = tag(mini);
+          const count = m.to - m.from + 1;
+          const i = n - t.from + l * (t.to - t.from + 1);
+          const frame = frames[m.from + (mini === "mini_work" ? i % count : Math.min(i, count - 1))];
+          oy = head + oy - FLOOR;
+          paint(frame.layer, oy);
+          head = headOf(frame.layer) ?? head;
         }
         out.push({ indices, delayMs: frames[n].duration });
       }
