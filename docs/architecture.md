@@ -60,7 +60,7 @@ interface SessionView {
 }
 ```
 
-UI receives the full list on start (`sessions:snapshot`) then diffs (`sessions:update`, `sessions:remove`).
+UI receives the full list on start (`sessions:snapshot`) then diffs (`sessions:update`, `sessions:remove`), plus `sessions:interaction` (`{ from, to }`) when one session messages another.
 
 ## Bridge protocol
 
@@ -178,6 +178,7 @@ The whole body must be at most **16 KiB**. Strings are counted in Unicode scalar
 | `WebFetch` | Host of `url` only (no path, no query string) |
 | `Bash`, `PowerShell` | Program name only. Split `command` on whitespace and skip leading `NAME=value` tokens (shell env assignments). If the first remaining token contains `=`, `$` or a quote, or starts with `$env:`, send no `target`. Otherwise send its last path segment (`git`, `cargo`) |
 | `Agent`, `Task` | `subagent_type` |
+| `SendMessage`, and MCP tools named `send_message` | The recipient only: the first of `to`, `recipient`, `session_id`; never the message (docs/session-detection.md#sessions-talking-to-each-other) |
 
 #### Responses
 
@@ -207,7 +208,7 @@ The bridge stamps each event with its own receive time and applies events in arr
 | --- | --- |
 | `SessionStart` | `SessionStarted` |
 | `UserPromptSubmit` | `PromptSubmitted` |
-| `PreToolUse` | `ToolStarted { tool: tool_name, summary }`, where `summary` is `"<tool_name> · <target>"` or just `tool_name` |
+| `PreToolUse` | `ToolStarted { tool: tool_name, summary, target }`, where `summary` is `"<tool_name> · <target>"` or just `tool_name`; a messaging tool's `target` is also used to pair the sessions talking |
 | `PostToolUse`, `PostToolUseFailure` | `ToolFinished { tool: tool_name }` |
 | `Notification` with `notification_type` in `permission_prompt`, `idle_prompt`, `elicitation_dialog`, `elicitation_url_dialog`, `agent_needs_input` | `NeedsInput` |
 | `Notification` with another type | Ignored (`204`) |

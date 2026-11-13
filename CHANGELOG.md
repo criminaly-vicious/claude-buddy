@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Buddies go for walks.** Now and then an idle buddy strolls along the bottom of the screen, looks around and walks back to its place. It hurries back when its session gets work (#77).
+- **Sessions chat.** When one Claude Code session messages another, its buddy walks over to the other one and they chat with speech bubbles before it walks back (#78).
+
+### Changed
+
+- **Hover balloon.** Hovering a buddy shows a pixel-art speech balloon that says what its session is doing in plain words ("Editing app.ts", "Running pnpm", "Waiting for you"), with the project and for how long (#76).
+- **Livelier Clawd.** He pops in from a puff, breathes slowly and blinks, looks where he walks, sits back down after being thrown, and leaves in a puff. Buddies no longer move in lockstep (#79).
+
+### Fixed
+
+- The hover balloon closed again right after opening, or never appeared (#76).
+- The empty space just above a buddy no longer catches clicks meant for the window behind it (#79).
+- Buddies appearing or leaving are no longer cut off at the edge of their spot (#79).
+
 ## [1.0.0] - 2026-11-13
 
 First release: an animated buddy in the corner of your screen for every Claude Code CLI session running on Windows.

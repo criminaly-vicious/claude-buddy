@@ -15,20 +15,23 @@
 
 | Name | Frames (approx.) | Loop | Used for |
 | --- | --- | --- | --- |
-| `spawn` | 8 | no | Pops in with a small hop and dust puff |
-| `idle` | 4 | yes | Breathing; random extras every 8–20 s: `idle_look`, `idle_stretch`, `idle_scratch` |
+| `spawn` | 8 | no | Pops in where it stands: a puff, a tiny Clawd springing up, a squashy landing, arms up |
+| `idle` | 8 | yes | Slow breathing (3 s loop, the body sinks a pixel) with a quick blink; random extras every 8–20 s: `idle_look`, `idle_stretch`, `idle_scratch` |
 | `sit_down` | 4 | no | Transition into working/researching |
 | `work_type` | 6 | yes | Sitting, laptop open, typing; occasional screen glow |
 | `research_read` | 6 | yes | Sitting, holding a paper sheet, eyes moving; occasional page flip |
 | `stand_up` | 4 | no | Leaving a sitting state |
 | `wait_wave` | 6 | yes | Standing, waving, `!` bubble bobbing |
 | `sleep` | 4 | yes | Curled up, `z` bubbles |
-| `walk` | 6 | yes | Walking back to its slot after being thrown or reordered |
+| `walk` | 6 | yes | Walking to a new slot when the group is reordered |
+| `walk_left`, `walk_right` | 6 | yes | Walking with the eyes leading the way: strolls, visits, and back from a throw |
+| `talk` | 6 | yes | Standing, gesturing, a `…` speech bubble: visiting another buddy |
+| `fx_talk`, `fx_reply` | 6, 4 | yes | Bubbles alone (`…`, and a heart in reply), drawn over a buddy without changing its pose |
 | `grabbed` | 4 | yes | Dangling, legs kicking |
 | `fly` | 2 | yes | Tumbling in the air |
 | `land` | 5 | no | Squash on landing; hard landings play `land_splat` then `dizzy` |
 | `dizzy` | 6 | no | Stars circling, then shakes it off |
-| `leave` | 8 | no | Waves goodbye and walks off screen |
+| `leave` | 8 | no | Waves goodbye, crouches and vanishes in a puff; the last frame is empty |
 
 ### State → animation
 
@@ -51,6 +54,8 @@ Implemented in `apps/desktop/src/overlay/controller.ts`:
 - `leave` plays once and holds its last frame until the session is removed.
 - Idle extras (`idle_look`, `idle_stretch`, `idle_scratch`) start 8–20 s into each `idle` loop, picked at random. They are deadlines the render loop sleeps until, not timers. Reduce motion turns them off.
 - Clips follow each other at exact times, so what shows depends only on the timestamps, not on how often the overlay redraws.
+- **Out of step:** each buddy starts its loops at its own phase (a hash of its session id), so buddies that appear together do not breathe, blink and type in lockstep.
+- **Back from an excursion** (throw, stroll, visit), where it stood and walked, the controller plays the way into the current state again from standing: a working buddy sits back down instead of popping into its chair.
 
 ## Layout
 
@@ -63,13 +68,33 @@ Implemented in `apps/desktop/src/overlay/layout.ts` and `scene.ts`:
 - **Order:** creation order, oldest touching the corner, mirrored for left and top corners; "forward" means away from the screen edge.
 - **Leaving:** when a buddy leaves, the ones behind it play `walk` and move up one slot at 64 sprite px/s. Positions are kept in sprite pixels along the floor, so resizing the window or changing DPI never makes anyone walk.
 - **Overflow:** the 10 oldest stay visible and the newest go behind the chip. Hovering the chip shows everyone; the group collapses 1.5 s after the pointer leaves it. Hidden buddies reappear in place, without walking.
-- **Window size:** the overlay window resizes around the group from its corner (`set_overlay_content_size`), instead of keeping a fixed size.
+- **Window size:** the overlay window resizes around the group from its corner (`set_overlay_content_size`), instead of keeping a fixed size. It always keeps room for the hover balloon (280 × 62 CSS px plus its tail), so opening the balloon never resizes the window.
+- **Hit regions:** only Clawd's part of each 32×32 frame (28 × 21 sprite px, arms up included) takes the mouse, so the empty air above him stays click-through.
+
+## Strolls
+
+Now and then an idle buddy goes for a short walk along the floor, away from the corner, looks around and walks back.
+
+Implemented in `apps/desktop/src/overlay/excursion.ts` (`Stroll`, pure) and `scene.ts`:
+- **When:** the first stroll comes 30–90 s after a buddy turns idle, the next ones every 1–3 min. Only one buddy is out at a time, never the one under the pointer, never while it plays an idle extra, and never with reduce motion on.
+- **How:** 40–120 sprite px towards the screen centre at 40 sprite px/s with `walk_left` / `walk_right`, a 1.2–2.8 s look around (`idle_look`), then back to its slot (following it if it moved).
+- **Called back:** if its session gets work meanwhile, it turns around at once, walks back and sits down.
+- **Window:** while someone strolls, the overlay grows to a strip along the floor (`overlay_expand` with `"floor"`: the work area's width, the corner area's height) and shrinks back when everyone is home.
+
+## Sessions talking to each other
+
+When a session messages another (docs/session-detection.md#sessions-talking-to-each-other), the sender's buddy walks over to the recipient's, they chat, and it walks back.
+
+Implemented in `excursion.ts` (`Visit`, pure) and `scene.ts`:
+- **Visit:** a sitting sender stands up first (`stand_up`), walks beside the recipient on its own side (`walk_left` / `walk_right`), talks for 2.6 s (`talk`, a `…` bubble), and walks back. 0.9 s into the talk, a heart bubble (`fx_reply`) answers over the recipient.
+- **Bubbles only:** when the walk cannot be shown (the recipient is unknown or gone, either buddy is away or hidden behind the chip, or reduce motion is on), a `…` bubble (`fx_talk`) shows over the sender for 2.6 s instead, with the heart over the recipient if known. A new bubble over a buddy replaces the one it would overlap.
+- Visits stay inside the corner area, so the window does not grow for them.
 
 ## Interactions
 
 | Input | Behaviour |
 | --- | --- |
-| Hover (300 ms) | Hover card above the buddy: project name, state label, tool, summary, elapsed time, "approximate" hint for transcript-only sessions |
+| Hover (300 ms) | Speech balloon above the buddy: what it is doing in plain words, project, state and for how long, "approximate" hint for transcript-only sessions |
 | Click | Focus the session's terminal window; buddy does a small happy hop |
 | Double-click | Buddy does a random silly animation (spin, jump) |
 | Drag | `grabbed`; buddy follows the cursor with a little lag (spring) |
@@ -88,30 +113,31 @@ Implemented in `apps/desktop/src/overlay/throw.ts` (physics and phases, pure), `
 - **Landing:** `land`, or `land_splat` then `dizzy` when the first floor impact was at least 1400 px/s (a fall of about 490 px). Then it plays `walk` in a straight line back to its slot at the normal walking speed, following the slot if it moves meanwhile, and goes back to its session's animation, which kept running underneath.
 - **Physics:** fixed 120 Hz steps on a grid that starts at the grab, in CSS px relative to the group's corner area, separate from drawing. The path depends only on the input timestamps, not on the redraw rate. The render loop runs at frame rate only while someone is held, flying or walking back, and sleeps again after.
 - **Window:** on the first drag the backend expands the overlay to the work area (`overlay_expand` returns where the corner area sits inside it), so the group stays put on screen while the window grows; it is drawn in that area whenever the canvas has the expanded size. Everything outside the buddies stays click-through. When the last buddy is back in its slot, `overlay_restore` shrinks the window again. Until the expansion lands, a throw stays inside the corner area.
-- A buddy can be caught again in mid-air. The hover card does not open on a thrown buddy.
+- A buddy can be caught again in mid-air, or while it strolls or visits. The hover balloon does not open on a thrown buddy.
 
 ## Hover card content rules
 
 - Max 3 lines, 80 chars each, sanitised (no secrets, no full commands). Example:
-  - `claude-buddy · Working · 2m 14s`
-  - `Edit · src/overlay/physics.ts`
-- Card is the only clickable-through exception besides the buddies.
+  - **`Editing physics.ts`**
+  - `claude-buddy · Working 2m 14s`
+- The balloon is the only clickable-through exception besides the buddies.
 
-Implemented in `apps/desktop/src/overlay/hoverCard.ts`:
-- **Lines:** `<project> · <state label> · <elapsed>`, then the tool summary (or the tool name), then "Approximate: install hooks for exact states" for transcript-only sessions.
+Implemented in `apps/desktop/src/overlay/hoverCard.ts` (text, timing, placement) and `renderer.ts` (drawing):
+- **Lines:** what the buddy is doing in plain words (bold), then `<project> · <state label> <elapsed>`, then "Approximate: connect Claude Code for exact states" for transcript-only sessions. While working or researching, the first line describes the current tool and its target: "Editing app.ts", "Reading README.md", "Searching for fn main", "Running pnpm", "Searching the web for …", "Delegating to Explore", "Messaging researcher", "Using github: create pull request". Otherwise it describes the state: "Done, waiting for a prompt", "Waiting for you", "Thinking", "Sleeping", and so on.
+- **Look:** a pixel-art speech balloon matching the sprites: white, a 1-sprite-pixel dark outline with cut corners, a soft shadow, a stepped tail pointing at Clawd's head, and a coloured dot for the state (orange working, blue researching, red waiting, green idle, purple sleeping). At most 280 CSS px wide; longer lines end with `…`.
 - **Sanitising:** lines are cut to 80 Unicode code points with `…`, and control characters are replaced, a second barrier after the backend's sanitising.
-- **Timing:** the card opens after 300 ms on one buddy and stays open while the pointer is on the buddy or the card. The elapsed time redraws once per second, only while the card is open.
-- **Placement:** the card sits on the side away from the screen edge (above in bottom corners), aligned with the buddy's outer side, and stays inside the overlay. The window grows to make room for it. While open, the card is a hit region.
-- **Leaving:** in the app, the backend's `overlay:pointer` event says when the pointer left every region, since the click-through window no longer sees it.
+- **Timing:** the balloon opens after 300 ms on one buddy and stays open while the pointer is on the buddy or the balloon. The elapsed time redraws once per second, only while it is open.
+- **Placement:** centred on Clawd, on the side away from the screen edge (above in bottom corners), inside the overlay. While open, the balloon and its tail down to the buddy are one hit region, so moving onto it keeps it open.
+- **On Windows:** the overlay is click-through until the mouse hook sees the pointer over a region. The backend's `overlay:pointer` event then says where the pointer is (`{ inside, x, y }`), so the balloon starts its delay even before the page gets a mouse event of its own; and when the pointer left every region, which closes it 120 ms later unless the pointer is still there. The window never resizes for the balloon, and the hit tester keeps regions where they are on screen while the window grows or shrinks around its corner (until the page sends new ones), so the pointer never seems to leave a buddy just because the window changed size.
 
 ### Click
 
-- A click on a buddy asks the backend to focus its session's terminal (docs/session-detection.md#window-focus-click-on-a-buddy). Clicks on the hover card do nothing.
-- **Happy hop:** when the window came to the front, the buddy hops 6 sprite px away from the floor and back in 320 ms (a parabola, whole sprite pixels), over whatever clip it is playing, sitting or standing, so no extra art is needed. The hit region and the hover card stay in place during the hop. No hop when nothing was focused.
+- A click on a buddy asks the backend to focus its session's terminal (docs/session-detection.md#window-focus-click-on-a-buddy). Clicks on the hover balloon do nothing.
+- **Happy hop:** when the window came to the front, the buddy hops 6 sprite px away from the floor and back in 320 ms (a parabola, whole sprite pixels), over whatever clip it is playing, sitting or standing, so no extra art is needed. The hit region and the hover balloon stay in place during the hop. No hop when nothing was focused.
 - In `pnpm dev:mock` there are no terminals, so every click hops.
 
 ## Accessibility & comfort
 
-- Option to reduce motion (no random idle extras, no screen shake), in the settings window; it applies at once, also to buddies already on screen.
+- Option to reduce motion (no random idle extras, no strolls, chats shown as bubbles only, no screen shake), in the settings window; it applies at once, also to buddies already on screen.
 - `waiting` uses shape (bubble + wave), not only colour.
 - Tooltip text respects system font scaling.
