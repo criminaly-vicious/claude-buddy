@@ -347,7 +347,7 @@ fn driver_expires_session_when_its_process_exits() {
                 assert_eq!(id, SESSION);
                 break;
             }
-            Change::Update(_) => {}
+            Change::Update(_) | Change::Interaction(_) => {}
         }
     }
     assert!(saw_leaving);

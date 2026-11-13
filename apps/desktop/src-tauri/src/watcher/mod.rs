@@ -133,6 +133,7 @@ impl State {
                     file.last_tool = Some(tool.clone());
                     EventKind::ToolStarted {
                         summary: Some(tool_summary(&tool, target.as_deref())),
+                        target,
                         tool,
                     }
                 }

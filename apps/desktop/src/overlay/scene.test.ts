@@ -4,7 +4,7 @@ import { parseAtlas } from "../sprites/atlas";
 import buddy from "../sprites/buddy/atlas.json";
 import type { BuddyState, SessionView } from "../types";
 import { HitRegionSync } from "./hitSync";
-import { HOP_MS, Scene, SPRITE_SIZE, Viewport } from "./scene";
+import { BODY_BOX, HOP_MS, Scene, SPRITE_SIZE, StrollTiming, Viewport } from "./scene";
 
 const atlas = parseAtlas(buddy);
 const viewport: Viewport = { width: 960, height: 320, devicePixelRatio: 2, scale: 2 };
@@ -34,11 +34,20 @@ describe("Scene", () => {
     expect(Number.isInteger(sprites[0].x)).toBe(true);
   });
 
-  it("reports hit regions in CSS pixels", () => {
+  it("reports hit regions in CSS pixels, around Clawd only", () => {
     const scene = new Scene(atlas);
     scene.setSessions([view("a", "idle")], 0);
     const { regions } = scene.render(0, viewport);
-    expect(regions).toEqual([{ x: 480 - 64, y: 160 - 64, width: 64, height: 64 }]);
+    // The cell is at (416, 96), 64 px; at 2 CSS px per sprite pixel the
+    // body box starts 2 px right and 10 px down, 28 × 21 sprite pixels.
+    expect(regions).toEqual([
+      {
+        x: 480 - 64 + BODY_BOX.x * 2,
+        y: 160 - 64 + BODY_BOX.y * 2,
+        width: BODY_BOX.width * 2,
+        height: BODY_BOX.height * 2,
+      },
+    ]);
   });
 
   it("asks for the next frame change and sleeps when nothing is on screen", () => {
@@ -129,7 +138,7 @@ describe("Scene group layout", () => {
     expect(c.frame).toEqual(
       atlas.clips.get("walk")!.frames.find((f) => f === c.frame) ?? "walk frame",
     );
-    expect(mid.nextChangeAt).toBeLessThanOrEqual(settledAt + 200 + 34);
+    expect(mid.nextChangeAt).toBeLessThanOrEqual(settledAt + 200 + 50);
 
     expect(xOf(scene, "c", settledAt + 2000)).toBe(start + slot);
     expect(xOf(scene, "a", settledAt + 2000)).toBe(960 - SPRITE_SIZE * px);
@@ -224,7 +233,10 @@ describe("Scene group layout", () => {
 
     const landed = scene.render(settledAt + HOP_MS, viewport);
     expect(landed.sprites[0].hop).toBe(0);
-    expect(landed.nextChangeAt).toBe(rest.nextChangeAt);
+    // Back to the sleep animation's own pace, as if it had never hopped.
+    const untouched = new Scene(atlas, { reduceMotion: true });
+    untouched.setSessions([view("a", "sleeping")], 0);
+    expect(landed.nextChangeAt).toBe(untouched.render(settledAt + HOP_MS, viewport).nextChangeAt);
   });
 
   it("hops downwards in top corners and ignores unknown ids", () => {
@@ -254,7 +266,12 @@ describe("Scene group layout", () => {
       expect(big.sprites.map((s) => [s.x - home.x, s.y - home.y])).toEqual(
         small.map((s) => [s.x, s.y]),
       );
-      expect(big.regions[0]).toEqual({ x: 1000 + 480 - 64, y: 500 + 160 - 64, width: 64, height: 64 });
+      expect(big.regions[0]).toEqual({
+        x: 1000 + 480 - 64 + BODY_BOX.x * 2,
+        y: 500 + 160 - 64 + BODY_BOX.y * 2,
+        width: BODY_BOX.width * 2,
+        height: BODY_BOX.height * 2,
+      });
     });
 
     it("only grabs buddies that are on screen", () => {
@@ -276,7 +293,7 @@ describe("Scene group layout", () => {
       expect(grabbedClip.frames).toContain(a.frame);
       expect(a.x / 2).toBeCloseTo(316, 0);
       expect(a.y / 2).toBeCloseTo(-4, 0);
-      expect(frame.regions[0].x).toBe(a.x / 2);
+      expect(frame.regions[0].x).toBe(a.x / 2 + BODY_BOX.x * 2);
       expect(frame.nextChangeAt).not.toBeNull();
     });
 
@@ -297,11 +314,10 @@ describe("Scene group layout", () => {
       expect(scene.busy).toBe(false);
       expect(left).toBeLessThan(rest.x - 100); // it really flew
       expect(frame.sprites[0]).toMatchObject({ x: rest.x, y: rest.y });
-      // Back to the idle animation's own pace, as if it had never been thrown.
-      const untouched = restingScene();
-      expect(scene.render(now + 1, viewport).nextChangeAt).toBe(
-        untouched.render(now + 1, viewport).nextChangeAt,
-      );
+      // Back to the idle animation's own pace: no more redraws at frame rate.
+      const settled = scene.render(now + 1, viewport).nextChangeAt;
+      expect(settled).not.toBeNull();
+      expect(settled! - (now + 1)).toBeGreaterThan(1000 / 30);
     });
 
     it("a removed session's throw is dropped", () => {
@@ -312,5 +328,156 @@ describe("Scene group layout", () => {
       scene.release(settledAt);
       expect(scene.render(settledAt, viewport).sprites.map((s) => s.id)).toEqual(["b"]);
     });
+  });
+});
+
+describe("Scene redraws", () => {
+  /** A seeded random, so the test is the same every run. */
+  const seeded = (seed: number) => () => {
+    seed = (seed * 1_103_515_245 + 12_345) % 2 ** 31;
+    return seed / 2 ** 31;
+  };
+  const resting: BuddyState[] = ["idle", "working", "researching", "waiting", "sleeping"];
+
+  it("a resting group wakes the loop at most 8 times a second, however many buddies", () => {
+    for (const count of [1, 4, 10]) {
+      const scene = new Scene(atlas, {
+        random: seeded(count),
+        strolls: { first: [1e9, 1e9], every: [1e9, 1e9], distance: [50, 50], pause: [0, 0], gap: [0, 0] },
+      });
+      // They turn up at odd times, in every resting state.
+      const sessions: SessionView[] = [];
+      for (let i = 0; i < count; i++) {
+        sessions.push(view(`s${i}`, resting[i % resting.length]));
+        scene.setSessions([...sessions], i * 1_337.7);
+      }
+      const from = count * 1_337.7 + 5_000;
+      const wakeups: number[] = [];
+      for (let t = scene.render(from, viewport).nextChangeAt!; t < from + 60_000; ) {
+        wakeups.push(t);
+        const next = scene.render(t, viewport).nextChangeAt!;
+        // Always ahead of now, or the loop would draw the same frame again at once.
+        expect(next).toBeGreaterThan(t);
+        t = next;
+      }
+      // Every wakeup is a step of the shared 125 ms grid...
+      expect(wakeups.filter((t) => Math.abs(t / 125 - Math.round(t / 125)) > 1e-6)).toEqual([]);
+      // ...so there are at most 8 a second, the same for 1 buddy as for 10.
+      expect(wakeups.length / 60).toBeLessThanOrEqual(8);
+    }
+  });
+});
+
+describe("Scene excursions", () => {
+  const spawnMs = atlas.clips.get("spawn")!.duration;
+  const calm: StrollTiming = {
+    first: [1000, 1000],
+    every: [60_000, 60_000],
+    distance: [50, 50],
+    pause: [1000, 1000],
+    gap: [0, 0],
+  };
+  const frames = (name: string) => atlas.clips.get(name)!.frames;
+
+  /** Renders every 50 ms from `from` to `until`; returns the frames. */
+  function play(scene: Scene, from: number, until: number) {
+    const out = [];
+    for (let t = from; t <= until; t += 50) out.push({ t, frame: scene.render(t, viewport) });
+    return out;
+  }
+
+  it("an idle buddy strolls away from the corner and back, one at a time", () => {
+    const scene = new Scene(atlas, { strolls: calm, random: () => 0 });
+    scene.setSessions([view("a", "idle"), view("b", "idle")], 0);
+    const rest = scene.render(spawnMs, viewport).sprites.map((s) => s.x);
+    expect(scene.roomNeeded()).toBeNull();
+    // a goes at +1 s and is back after 3.5 s; b waits its turn (+4 s) and goes then.
+    const seen = play(scene, spawnMs, spawnMs + 12_000);
+    const out = seen.filter(({ frame }) => frame.sprites.some((s, i) => s.x !== rest[i]));
+    expect(out.length).toBeGreaterThan(0);
+    // Bottom-right: it walks left (smaller x), and only one buddy at a time.
+    for (const { frame } of out) {
+      const moved = frame.sprites.filter((s, i) => s.x !== rest[i]);
+      expect(moved).toHaveLength(1);
+      expect(moved[0].x).toBeLessThan(rest[frame.sprites.indexOf(moved[0])]);
+    }
+    // Back in place at the end, and the overlay may shrink again.
+    expect(seen.at(-1)!.frame.sprites.map((s) => s.x)).toEqual(rest);
+    expect(scene.roomNeeded()).toBeNull();
+  });
+
+  it("keeps a quiet time between strolls, whoever goes", () => {
+    const scene = new Scene(atlas, { strolls: { ...calm, gap: [20_000, 20_000] }, random: () => 0 });
+    scene.setSessions([view("a", "idle"), view("b", "idle")], 0);
+    const rest = scene.render(spawnMs, viewport).sprites.map((s) => s.x);
+    const moving = (t: number) => scene.render(t, viewport).sprites.some((s, i) => s.x !== rest[i]);
+    // a goes at +1 s and is home by +4.5 s; b may not go before +24.5 s.
+    const seen: { t: number; moving: boolean }[] = [];
+    for (let t = spawnMs; t <= spawnMs + 30_000; t += 50) seen.push({ t, moving: moving(t) });
+    const starts = seen.filter((s, i) => s.moving && !seen[i - 1]?.moving).map((s) => s.t - spawnMs);
+    expect(starts).toHaveLength(2);
+    expect(starts[1] - starts[0]).toBeGreaterThanOrEqual(3_500 + 20_000);
+  });
+
+  it("asks for a floor strip while someone strolls", () => {
+    const scene = new Scene(atlas, { strolls: calm, random: () => 0 });
+    scene.setSessions([view("a", "idle")], 0);
+    play(scene, spawnMs, spawnMs + 1500);
+    expect(scene.roomNeeded()).toBe("floor");
+  });
+
+  it("never strolls with reduce motion, while busy or under the pointer", () => {
+    for (const setup of [
+      (s: Scene) => s.setReduceMotion(true, 0),
+      (s: Scene) => s.update(view("a", "working"), 0),
+      (s: Scene) => s.setHovered("a"),
+    ]) {
+      const scene = new Scene(atlas, { strolls: calm, random: () => 0 });
+      scene.setSessions([view("a", "idle")], 0);
+      setup(scene);
+      play(scene, spawnMs, 5000);
+      expect(scene.roomNeeded()).toBeNull();
+    }
+  });
+
+  it("a stroller called back to work walks back and sits down", () => {
+    const scene = new Scene(atlas, { strolls: calm, random: () => 0 });
+    scene.setSessions([view("a", "idle")], 0);
+    const rest = scene.render(spawnMs, viewport).sprites[0].x;
+    play(scene, spawnMs, 1600);
+    scene.update(view("a", "working"), 1600);
+    const seen = play(scene, 1650, 6000);
+    const back = seen.find(({ frame }) => frame.sprites[0].x === rest)!;
+    expect(back).toBeDefined();
+    const after = seen.filter(({ t }) => t > back.t).map(({ frame }) => frame.sprites[0].frame);
+    expect(after.some((f) => frames("sit_down").includes(f))).toBe(true);
+  });
+
+  it("a session messaging another walks its buddy over to talk", () => {
+    const never = { ...calm, first: [1e9, 1e9] as [number, number] };
+    const scene = new Scene(atlas, { strolls: never });
+    scene.setSessions([view("a", "idle"), view("b", "idle")], 0);
+    const rest = scene.render(spawnMs, viewport).sprites;
+    scene.interact("b", "a", spawnMs);
+    const seen = play(scene, spawnMs, spawnMs + 12_000);
+    // b walks towards a (to the right in this corner), talks, and is back.
+    const talking = seen.filter(({ frame }) => frames("talk").includes(frame.sprites[1].frame));
+    expect(talking.length).toBeGreaterThan(0);
+    expect(talking[0].frame.sprites[1].x).toBeGreaterThan(rest[1].x);
+    // a answers with a bubble while b talks.
+    expect(seen.some(({ frame }) => frame.effects.some((e) => e.id === "a"))).toBe(true);
+    expect(seen.at(-1)!.frame.sprites[1].x).toBe(rest[1].x);
+    expect(seen.at(-1)!.frame.effects).toHaveLength(0);
+  });
+
+  it("without a known recipient, the sender just shows a speech bubble", () => {
+    const scene = new Scene(atlas);
+    scene.setSessions([view("a", "working")], 0);
+    scene.interact("a", null, spawnMs);
+    const frame = scene.render(spawnMs + 100, viewport);
+    expect(frame.effects.map((e) => e.id)).toEqual(["a"]);
+    expect(frames("fx_talk")).toContain(frame.effects[0].frame);
+    expect(scene.roomNeeded()).toBeNull();
+    expect(scene.render(spawnMs + 3000, viewport).effects).toHaveLength(0);
   });
 });

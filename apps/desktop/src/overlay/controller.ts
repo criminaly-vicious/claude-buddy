@@ -40,7 +40,25 @@ const IDLE_EXTRAS = ["idle_look", "idle_stretch", "idle_scratch"] as const;
 const EXTRA_MIN_MS = 8_000;
 const EXTRA_SPREAD_MS = 12_000;
 
-type Posture = "standing" | "sitting";
+export type Posture = "standing" | "sitting";
+
+/**
+ * The grid a clip's frame changes fall on: the longest time that every
+ * frame lasts a whole number of (125 ms for the clips a resting buddy
+ * plays), or null when frame times are not whole milliseconds.
+ */
+export function gridOf(clip: Clip): number | null {
+  let grid = 0;
+  for (const { duration } of clip.frames) {
+    if (!Number.isInteger(duration) || duration <= 0) return null;
+    grid = gcd(grid, duration);
+  }
+  return grid > 0 ? grid : null;
+}
+
+function gcd(a: number, b: number): number {
+  return b === 0 ? a : gcd(b, a % b);
+}
 
 interface Step {
   clip: string;
@@ -82,6 +100,11 @@ export interface ControllerOptions {
   random?: () => number;
   /** No random idle extras (accessibility setting). */
   reduceMotion?: boolean;
+  /**
+   * Where in its loops this buddy is (0..1), so buddies that appear
+   * together do not breathe, blink and type in lockstep.
+   */
+  phase?: number;
 }
 
 export interface Showing {
@@ -96,6 +119,7 @@ export class AnimationController {
   private readonly clips: ReadonlyMap<string, Clip>;
   private readonly random: () => number;
   private reduceMotion: boolean;
+  private readonly phase: number;
 
   private target: BuddyState;
   private step: Step;
@@ -109,6 +133,7 @@ export class AnimationController {
     this.clips = options.clips;
     this.random = options.random ?? Math.random;
     this.reduceMotion = options.reduceMotion ?? false;
+    this.phase = options.phase ?? 0;
     this.target = state;
     // A new buddy always pops in first (spec: spawning → spawn → idle);
     // one first seen mid-turn then goes straight to its state.
@@ -136,6 +161,23 @@ export class AnimationController {
     return this.target;
   }
 
+  /** Whether the buddy sits or stands at `now` (after the clip playing then). */
+  posture(now: number): Posture {
+    this.advance(now);
+    return this.postureAfter(this.step);
+  }
+
+  /**
+   * Back from an excursion (throw, stroll, visit), where it stood and
+   * walked: plays the way into the current state again from standing, so
+   * a working buddy sits down instead of popping into its chair.
+   */
+  restart(now: number): void {
+    this.advance(now);
+    const target = this.target === "spawning" ? "idle" : this.target;
+    this.startPlan(plan(target, "standing"), now);
+  }
+
   setState(state: BuddyState, now: number): void {
     this.advance(now);
     if (state === this.target) return;
@@ -152,8 +194,9 @@ export class AnimationController {
   current(now: number): Showing {
     this.advance(now);
     const clip = this.clip(this.step.clip);
-    const { frame, nextChangeAt } = frameAt(clip, now - this.startedAt, this.step.loop);
-    let next = nextChangeAt === null ? null : this.startedAt + nextChangeAt;
+    const shift = this.loopShift(clip);
+    const { frame, nextChangeAt } = frameAt(clip, now - this.startedAt + shift, this.step.loop);
+    let next = nextChangeAt === null ? null : this.startedAt - shift + nextChangeAt;
     // A one-shot followed by another step changes when it ends.
     if (!this.step.loop && next === null && this.queue.length > 0) {
       next = this.startedAt + clip.duration;
@@ -161,6 +204,9 @@ export class AnimationController {
     if (this.nextExtraAt !== null && (next === null || this.nextExtraAt < next)) {
       next = this.nextExtraAt;
     }
+    // Rounding can put a frame change a hair before `now`; never ask for a
+    // redraw at `now` itself, or the loop would draw the same frame again.
+    if (next !== null && next <= now) next = now + 1;
     return { clip: this.step.clip, frame, nextChangeAt: next };
   }
 
@@ -195,6 +241,28 @@ export class AnimationController {
     }
   }
 
+  /**
+   * How far into a loop the buddy starts. Loops go on a shared clock: every
+   * frame change falls on a multiple of the clip's grid (`gridOf`), whenever
+   * the buddy started, so buddies change frames at the same instants and a
+   * group costs no more redraws than its busiest grid. The buddy's phase,
+   * in whole grid steps, picks where in the loop it starts, so they do not
+   * move in lockstep either.
+   */
+  private loopShift(clip: Clip): number {
+    if (!this.step.loop) return 0;
+    const grid = gridOf(clip);
+    if (grid === null) return this.phase * clip.duration;
+    const toGrid = ((this.startedAt % grid) + grid) % grid;
+    return toGrid + Math.floor((this.phase * clip.duration) / grid) * grid;
+  }
+
+  /** `t` moved on to the next step of the idle loop's grid. */
+  private onIdleGrid(t: number): number {
+    const grid = gridOf(this.clip("idle"));
+    return grid === null ? t : Math.ceil(t / grid) * grid;
+  }
+
   private startPlan(steps: Step[], at: number): void {
     const [first, ...rest] = steps;
     this.step = first;
@@ -204,9 +272,10 @@ export class AnimationController {
   }
 
   private enterStep(at: number): void {
+    // Extras start on the grid too, so they add no redraws of their own.
     this.nextExtraAt =
       this.step.clip === "idle" && this.step.loop && !this.reduceMotion
-        ? at + EXTRA_MIN_MS + this.random() * EXTRA_SPREAD_MS
+        ? this.onIdleGrid(at + EXTRA_MIN_MS + this.random() * EXTRA_SPREAD_MS)
         : null;
   }
 

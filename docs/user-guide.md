@@ -92,7 +92,7 @@ Each buddy acts out what its session is doing:
 | Working: editing files, running commands, running subagents | Sits down, opens a laptop and types |
 | Researching: reading files, searching, browsing the web | Sits down and reads a sheet of paper |
 | Waiting for you: a permission prompt or a question | Stands up and waves, with a `!` bubble. It also steps forward a little so you notice it |
-| Idle: Claude finished its turn | Stands around, now and then looks around, stretches or scratches |
+| Idle: Claude finished its turn | Stands around, now and then looks around, stretches or scratches, and every few minutes takes a [short stroll](#strolls) |
 | Idle for a while (5 minutes by default, [adjustable](#settings)) | Curls up and sleeps (`z` bubbles). Wakes up on the next activity |
 | Session ended | Waves goodbye and walks off |
 
@@ -100,26 +100,38 @@ Buddies line up side by side in a corner of the screen (bottom right unless you 
 
 A buddy also leaves if its session's process disappears for 15 seconds, for example when you close the terminal window without exiting Claude Code.
 
+### Strolls
+
+Now and then an idle buddy wanders off along the bottom of the screen, looks around and walks back to its place. Only one buddy goes at a time, and the group then stays home for a minute or so. If its session gets work meanwhile, it turns around at once and goes back to its desk. Hovering a buddy keeps it home. **Reduce motion** in [Settings](#settings) turns strolls off.
+
+### Sessions talking to each other
+
+When one session sends a message to another (for example with Claude Code's `SendMessage` tool, or a tool that messages another session), the sender's buddy gets up, walks over to the other buddy and they chat for a moment: a `…` bubble over the sender and a heart in reply. Then it walks back and carries on.
+
+- Claude Buddy only looks at who a message is for, never at what it says.
+- If it cannot tell who the message is for, or the other buddy is not on screen, the sender just shows a `…` bubble where it stands.
+- With **Reduce motion** on, nobody walks: the bubbles show where the buddies stand.
+
 Full details: [animation spec](animation-spec.md).
 
 ## Interacting with buddies
 
-The overlay is click-through: clicks anywhere except on a buddy (or its hover card) go to the window underneath, so the buddies never get in your way.
+The overlay is click-through: clicks anywhere except on a buddy (or its hover balloon) go to the window underneath, so the buddies never get in your way.
 
-### Hover card
+### Hover balloon
 
-Rest the pointer on a buddy for about a third of a second to see a small card:
+Rest the pointer on a buddy for about a third of a second and a speech balloon pops up above it, saying what it is doing:
 
 ```
-claude-buddy · Working · 2m 14s
-Edit · overlay.ts
+● Editing overlay.ts
+claude-buddy · Working 2m 14s
 ```
 
-- Line 1: the project (the session's folder name), what it is doing, and for how long.
-- Line 2: the current or last tool and a short target, such as a file name or the first words of a search.
+- Line 1: what the session is doing, in plain words: "Editing overlay.ts", "Running pnpm", "Reading README.md", "Searching the web for …", "Messaging researcher", or, between tools, "Thinking", "Waiting for you", "Done, waiting for a prompt", "Sleeping". The dot's colour shows the state.
+- Line 2: the project (the session's folder name), the state and for how long.
 - For sessions without hooks, a third line says the state is approximate.
 
-The card never shows prompts, file contents or full commands, and every line is cut at 80 characters.
+The balloon stays open while the pointer is on the buddy or on the balloon, and closes a moment after it leaves both. It never shows prompts, file contents or full commands, and every line is cut at 80 characters.
 
 ### Click to focus the terminal
 
@@ -161,7 +173,7 @@ Tray menu → **Settings…** opens the settings window. Changes apply right awa
 | Monitor | Any connected monitor, listed by number, name and resolution | Primary monitor |
 | Size | 1×, 2×, 3× | 2× |
 | Fall asleep after | 1 to 120 minutes idle | 5 minutes |
-| Reduce motion | Turns off the random idle animations | Off |
+| Reduce motion | Turns off the random idle animations and the [strolls](#strolls); [sessions talking](#sessions-talking-to-each-other) show as bubbles, without walking over | Off |
 
 **Startup**
 
@@ -187,7 +199,7 @@ Settings are stored in `%APPDATA%\claude-buddy\config.json`. If that file gets d
 
 ### Approximate states
 
-When a session has no hooks, Claude Buddy reads the session's transcript file instead (Claude Code keeps it under `.claude\projects\`). That is enough to see that a session exists and roughly what it does, but it is slower and less precise. In particular it cannot reliably tell that Claude is waiting for your permission. The hover card shows "Approximate: install hooks for exact states" for these sessions, and their buddies leave after 30 minutes without activity.
+When a session has no hooks, Claude Buddy reads the session's transcript file instead (Claude Code keeps it under `.claude\projects\`). That is enough to see that a session exists and roughly what it does, but it is slower and less precise. In particular it cannot reliably tell that Claude is waiting for your permission. The hover balloon shows "Approximate: connect Claude Code for exact states" for these sessions, and their buddies leave after 30 minutes without activity.
 
 Fix: [connect Claude Code](#connect-claude-code) (the mod, or **Install / repair hooks…**) and restart the session.
 
@@ -211,7 +223,7 @@ The installer is not code-signed yet, so Windows Defender SmartScreen may show "
 
 It only needs to know *what kind of thing* each session is doing:
 
-- From the mod or the hook: the session id, its folder, the event (prompt sent, tool started, waiting, finished), the tool name, and a short target such as a file name. Both drop prompts, file contents, tool output and full commands before anything leaves Claude Code.
+- From the mod or the hook: the session id, its folder, the event (prompt sent, tool started, waiting, finished), the tool name, and a short target such as a file name. For a message to another session, the target is only who it is for. Both drop prompts, message text, file contents, tool output and full commands before anything leaves Claude Code.
 - From transcripts (only for sessions without hooks): the type of each entry and the tool name. It does not keep or show any text.
 
 Everything stays on your computer. The mod and the hook talk to the app over `127.0.0.1` with a random token that only your user account can read. There is no telemetry, no account and no network access beyond that.
@@ -237,7 +249,7 @@ No. It only observes. It never sends input to a session or approves anything for
 
 ### How heavy is it?
 
-It is designed to use under 1% CPU and under 80 MB of RAM with five buddies on screen. It only redraws when something changes.
+It is designed to use under 1% CPU and under 80 MB of RAM with five buddies on screen. It only redraws when a buddy's picture changes: while the buddies rest, all of them share one animation clock, so a whole group redraws a few times a second at most, however many there are. It draws more often only while a buddy walks, strolls or flies, and only for as long as that lasts.
 
 ### Is this made by Anthropic?
 

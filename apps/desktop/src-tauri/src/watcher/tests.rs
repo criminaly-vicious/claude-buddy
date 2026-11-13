@@ -72,7 +72,8 @@ fn appended_lines_become_transcript_events() {
         kinds[1],
         EventKind::ToolStarted {
             tool: "Read".into(),
-            summary: Some("Read · notes.txt".into())
+            summary: Some("Read · notes.txt".into()),
+            target: Some("notes.txt".into())
         }
     );
     assert_eq!(

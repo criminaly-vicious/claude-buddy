@@ -18,7 +18,7 @@ export interface Anchor {
 }
 
 /**
- * Registers where buddies and the hover card are. The overlay is
+ * Registers where buddies and the hover balloon are. The overlay is
  * click-through everywhere else. Send the full list whenever it changes.
  */
 export function setHitRegions(regions: HitRegion[]): Promise<void> {
@@ -32,13 +32,17 @@ export interface ExpandedLayout {
   home: HitRegion;
 }
 
+/** How far the overlay grows: the whole work area (throws) or a floor strip (strolls). */
+export type ExpandMode = "work" | "floor";
+
 /**
- * Grows the overlay to its monitor's work area while a buddy is dragged or
- * thrown. Resolves where the anchored corner area lies inside it, or `null`
+ * Grows the overlay while buddies leave their corner: to the monitor's work
+ * area while one is dragged or thrown, to a strip along the floor while one
+ * strolls. Resolves where the anchored corner area lies inside it, or `null`
  * when the backend knows no monitor.
  */
-export function expandOverlay(): Promise<ExpandedLayout | null> {
-  return invoke("overlay_expand");
+export function expandOverlay(mode: ExpandMode = "work"): Promise<ExpandedLayout | null> {
+  return invoke("overlay_expand", { mode });
 }
 
 /** Back to the anchored corner. */
@@ -81,13 +85,21 @@ export function onOverlayAnchor(handler: (anchor: Anchor) => void): Promise<() =
   return listen<Anchor>("overlay:anchor", (event) => handler(event.payload));
 }
 
+/** The pointer entered (`inside`) or left every region; `x`/`y` in CSS px, overlay-relative. */
+export interface OverlayPointer {
+  inside: boolean;
+  x: number | null;
+  y: number | null;
+}
+
 /**
- * Calls `handler(false)` when the pointer leaves every buddy, chip and card
+ * Calls `handler` when the pointer leaves every buddy, chip and balloon
  * region (the overlay turns click-through and stops seeing the mouse), and
- * `handler(true)` when it enters one.
+ * when it enters one, with where it is: the page may not get a mouse event
+ * of its own until the pointer moves again.
  */
-export function onOverlayPointer(handler: (inside: boolean) => void): Promise<() => void> {
-  return listen<boolean>("overlay:pointer", (event) => handler(event.payload));
+export function onOverlayPointer(handler: (pointer: OverlayPointer) => void): Promise<() => void> {
+  return listen<OverlayPointer>("overlay:pointer", (event) => handler(event.payload));
 }
 
 /** Calls `handler` when the buddies are hidden (`false`) or shown (`true`) from the tray. */

@@ -72,6 +72,44 @@ pub fn anchor(work_area: Rect, size: (f64, f64), scale: f64, corner: Corner, mar
     }
 }
 
+/// How far the overlay grows while buddies leave their corner.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ExpandMode {
+    /// The whole work area: a buddy is dragged or thrown.
+    Work,
+    /// A strip along the floor, the anchored area's height across the work
+    /// area's width: a buddy strolls along the floor.
+    Floor,
+}
+
+/// The overlay's rectangle when expanded: the work area, or the floor strip
+/// through the anchored rectangle `home`.
+pub fn expanded_rect(work: Rect, home: Rect, mode: ExpandMode) -> Rect {
+    match mode {
+        ExpandMode::Work => work,
+        ExpandMode::Floor => Rect {
+            x: work.x,
+            y: home.y,
+            width: work.width,
+            height: home.height,
+        },
+    }
+}
+
+/// The corner of `rect` the overlay is anchored by. It stays put on screen
+/// when only the overlay's size changes.
+pub fn anchor_point(rect: Rect, corner: Corner) -> (i32, i32) {
+    let right = rect.x + rect.width as i32;
+    let bottom = rect.y + rect.height as i32;
+    match corner {
+        Corner::TopLeft => (rect.x, rect.y),
+        Corner::TopRight => (right, rect.y),
+        Corner::BottomLeft => (rect.x, bottom),
+        Corner::BottomRight => (right, bottom),
+    }
+}
+
 /// Where the anchored rectangle `home` sits inside `outer` (the expanded
 /// overlay), in logical pixels relative to `outer`'s top-left corner. The
 /// frontend keeps the buddies there while the window is expanded, so the
@@ -116,6 +154,39 @@ mod tests {
         width: 1920,
         height: 1032,
     };
+
+    #[test]
+    fn floor_strip_spans_the_work_area_at_the_home_height() {
+        let home = anchor(WORK, (200.0, 100.0), 1.0, Corner::BottomRight, 8.0);
+        assert_eq!(expanded_rect(WORK, home, ExpandMode::Work), WORK);
+        assert_eq!(
+            expanded_rect(WORK, home, ExpandMode::Floor),
+            Rect {
+                x: 0,
+                y: home.y,
+                width: 1920,
+                height: 100
+            }
+        );
+    }
+
+    #[test]
+    fn anchor_point_stays_put_when_the_size_changes() {
+        for corner in [
+            Corner::TopLeft,
+            Corner::TopRight,
+            Corner::BottomLeft,
+            Corner::BottomRight,
+        ] {
+            let small = anchor(WORK, (100.0, 80.0), 1.5, corner, 8.0);
+            let big = anchor(WORK, (300.0, 200.0), 1.5, corner, 8.0);
+            assert_eq!(
+                anchor_point(small, corner),
+                anchor_point(big, corner),
+                "{corner:?}"
+            );
+        }
+    }
 
     #[test]
     fn inner_rect_places_home_inside_the_expanded_overlay() {

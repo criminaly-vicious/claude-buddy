@@ -30,6 +30,11 @@ function isExpanded(canvas: Size, layout: ExpandedLayout | null): layout is Expa
   );
 }
 
+/** `layout` when the canvas has its size (the window has grown), else `null`. */
+export function activeLayout(canvas: Size, layout: ExpandedLayout | null): ExpandedLayout | null {
+  return isExpanded(canvas, layout) ? layout : null;
+}
+
 /** Where the corner area is on a canvas of `canvas` CSS size. */
 export function homeArea(canvas: Size, layout: ExpandedLayout | null): CssRect {
   if (isExpanded(canvas, layout)) return { ...layout.home };
