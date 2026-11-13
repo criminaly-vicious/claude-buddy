@@ -42,10 +42,22 @@ const EXTRA_SPREAD_MS = 12_000;
 
 export type Posture = "standing" | "sitting";
 
-/** The frame time of a clip whose frames all last the same, else null. */
-function frameMsOf(clip: Clip): number | null {
-  const d = clip.frames[0]?.duration ?? 0;
-  return d > 0 && clip.frames.every((f) => f.duration === d) ? d : null;
+/**
+ * The grid a clip's frame changes fall on: the longest time that every
+ * frame lasts a whole number of (125 ms for the clips a resting buddy
+ * plays), or null when frame times are not whole milliseconds.
+ */
+export function gridOf(clip: Clip): number | null {
+  let grid = 0;
+  for (const { duration } of clip.frames) {
+    if (!Number.isInteger(duration) || duration <= 0) return null;
+    grid = gcd(grid, duration);
+  }
+  return grid > 0 ? grid : null;
+}
+
+function gcd(a: number, b: number): number {
+  return b === 0 ? a : gcd(b, a % b);
 }
 
 interface Step {
@@ -230,24 +242,25 @@ export class AnimationController {
   }
 
   /**
-   * How far into a loop the buddy starts. Loops whose frames all last the
-   * same time go on a shared grid: every buddy changes frames at the same
-   * instants (multiples of the frame time), so a group costs one redraw per
-   * frame however many buddies there are, and the buddy's phase picks the
-   * frame it starts on, so they do not move in lockstep either.
+   * How far into a loop the buddy starts. Loops go on a shared clock: every
+   * frame change falls on a multiple of the clip's grid (`gridOf`), whenever
+   * the buddy started, so buddies change frames at the same instants and a
+   * group costs no more redraws than its busiest grid. The buddy's phase,
+   * in whole grid steps, picks where in the loop it starts, so they do not
+   * move in lockstep either.
    */
   private loopShift(clip: Clip): number {
     if (!this.step.loop) return 0;
-    const d = frameMsOf(clip);
-    if (d === null) return this.phase * clip.duration;
-    const toGrid = ((this.startedAt % d) + d) % d;
-    return toGrid + Math.floor(this.phase * clip.frames.length) * d;
+    const grid = gridOf(clip);
+    if (grid === null) return this.phase * clip.duration;
+    const toGrid = ((this.startedAt % grid) + grid) % grid;
+    return toGrid + Math.floor((this.phase * clip.duration) / grid) * grid;
   }
 
-  /** `t` moved on to the next frame change of the idle loop's grid. */
+  /** `t` moved on to the next step of the idle loop's grid. */
   private onIdleGrid(t: number): number {
-    const d = frameMsOf(this.clip("idle"));
-    return d === null ? t : Math.ceil(t / d) * d;
+    const grid = gridOf(this.clip("idle"));
+    return grid === null ? t : Math.ceil(t / grid) * grid;
   }
 
   private startPlan(steps: Step[], at: number): void {

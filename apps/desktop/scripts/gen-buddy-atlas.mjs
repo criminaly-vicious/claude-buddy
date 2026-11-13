@@ -398,9 +398,9 @@ const walkLegs = [
  * returns a Layer. Spec order, then the extra clips the overlay uses.
  *
  * The clips a resting buddy plays (idle and its extras, work, research,
- * wait, sleep) use 125 ms or a multiple of it per frame: the overlay puts
- * them on one shared timing grid, so a whole group redraws at most 8 times
- * a second (see docs/animation-spec.md, "Redraws").
+ * wait, sleep) use multiples of 125 ms per frame: the overlay puts them on
+ * one shared timing grid, so a whole group redraws at most 8 times a second
+ * (see docs/animation-spec.md, "Redraws").
  */
 const CLIPS = [
   [
@@ -428,11 +428,9 @@ const CLIPS = [
   ],
   [
     "idle",
-    // Slow breathing (the body sinks a pixel for a second) and a blink, every
-    // 3 s. Equal frames, so the overlay can put every idle buddy on one
-    // shared redraw grid (see the animation controller).
-    250,
-    ["n", "n", "n", "n", "out", "out", "out", "out", "n", "n", "blink", "n"].map((f) => () =>
+    // Slow breathing (the body sinks a pixel for a second) and a quick blink, every 3 s.
+    [1000, 1000, 625, 125, 250],
+    ["n", "out", "n", "blink", "n"].map((f) => () =>
       clawd({ h: f === "out" ? 11 : 12, eyes: f === "blink" ? "closed" : "open" }).layer,
     ),
   ],
@@ -622,11 +620,19 @@ const CLIPS = [
 
 const frames = [];
 const frameTags = [];
+/** A frame's pixels as one string, to spot frames that look the same. */
+const looks = (layer) => layer.px.map((c) => (c ? c.join(",") : "")).join(";");
 for (const [name, duration, makers] of CLIPS) {
   const from = frames.length;
-  makers.forEach((make, index) =>
-    frames.push({ name, index, duration: Array.isArray(duration) ? duration[index] : duration, layer: make() }),
-  );
+  makers.forEach((make, i) => {
+    const layer = make();
+    const ms = Array.isArray(duration) ? duration[i] : duration;
+    const before = frames.length > from ? frames[frames.length - 1] : null;
+    // A frame that looks like the one before it makes that one last longer
+    // instead, so the overlay redraws only when the picture changes.
+    if (before && looks(before.layer) === looks(layer)) before.duration += ms;
+    else frames.push({ name, index: frames.length - from, duration: ms, layer });
+  });
   frameTags.push({ name, from, to: frames.length - 1, direction: "forward" });
 }
 
@@ -715,7 +721,7 @@ function clipsSheet() {
   const cell = SIZE * scale;
   const pad = 8;
   const labelW = 14 * 4 * 2 + pad * 2;
-  const maxFrames = Math.max(...CLIPS.map(([, , m]) => m.length));
+  const maxFrames = Math.max(...frameTags.map((t) => t.to - t.from + 1));
   const w = labelW + maxFrames * (cell + pad) + pad;
   const h = pad + CLIPS.length * (cell + pad);
   const bg = hex("#F4F1EC");
@@ -728,8 +734,7 @@ function clipsSheet() {
         for (let y = y0; y < y0 + hh; y++) for (let x = x0; x < x0 + ww; x++) put(x, y, c);
       };
       fill(0, 0, w, h, bg);
-      let n = 0;
-      CLIPS.forEach(([name, , makers], row) => {
+      frameTags.forEach(({ name, from, to }, row) => {
         const y0 = pad + row * (cell + pad);
         [...name].forEach((ch, i) =>
           (FONT[ch] ?? FONT[" "]).forEach((r, gy) =>
@@ -738,10 +743,9 @@ function clipsSheet() {
             }),
           ),
         );
-        makers.forEach((_, i) => {
+        frames.slice(from, to + 1).forEach(({ layer }, i) => {
           const x0 = labelW + i * (cell + pad);
           fill(x0, y0, cell, cell, panel);
-          const layer = frames[n++].layer;
           for (let y = 0; y < SIZE; y++) {
             for (let x = 0; x < SIZE; x++) {
               const c = layer.get(x, y);

@@ -3,18 +3,36 @@ import { describe, expect, it } from "vitest";
 import { parseAtlas } from "../sprites/atlas";
 import buddy from "../sprites/buddy/atlas.json";
 import type { BuddyState } from "../types";
-import { AnimationController, CONTROLLER_CLIPS, plan } from "./controller";
+import {
+  AnimationController,
+  CONTROLLER_CLIPS,
+  gridOf,
+  plan,
+} from "./controller";
 
 const atlas = parseAtlas(buddy);
 const ms = (clip: string) => atlas.clips.get(clip)!.duration;
 
 /** No idle extras unless a test wants them. */
-function controller(state: BuddyState, now = 0, random = () => 0.5, reduceMotion = true) {
-  return new AnimationController(state, now, { clips: atlas.clips, random, reduceMotion });
+function controller(
+  state: BuddyState,
+  now = 0,
+  random = () => 0.5,
+  reduceMotion = true,
+) {
+  return new AnimationController(state, now, {
+    clips: atlas.clips,
+    random,
+    reduceMotion,
+  });
 }
 
 /** Clips shown from `from` to `until`, following `nextChangeAt`, collapsed. */
-function timeline(c: AnimationController, from: number, until: number): string[] {
+function timeline(
+  c: AnimationController,
+  from: number,
+  until: number,
+): string[] {
   const seen: string[] = [];
   let t = from;
   for (let guard = 0; guard < 10_000 && t <= until; guard++) {
@@ -56,7 +74,8 @@ describe("plan (spec state table)", () => {
   });
 
   it("every clip it uses exists in the atlas", () => {
-    for (const name of CONTROLLER_CLIPS) expect(atlas.clips.has(name), name).toBe(true);
+    for (const name of CONTROLLER_CLIPS)
+      expect(atlas.clips.has(name), name).toBe(true);
   });
 });
 
@@ -78,10 +97,16 @@ describe("AnimationController", () => {
   it("sits down before working and stands up before waiting", () => {
     const [c, t] = settled("idle");
     c.setState("working", t);
-    expect(timeline(c, t, t + ms("sit_down") + 10)).toEqual(["sit_down", "work_type"]);
+    expect(timeline(c, t, t + ms("sit_down") + 10)).toEqual([
+      "sit_down",
+      "work_type",
+    ]);
     const t2 = t + 5_000;
     c.setState("waiting", t2);
-    expect(timeline(c, t2, t2 + ms("stand_up") + 10)).toEqual(["stand_up", "wait_wave"]);
+    expect(timeline(c, t2, t2 + ms("stand_up") + 10)).toEqual([
+      "stand_up",
+      "wait_wave",
+    ]);
   });
 
   it("swaps the prop without standing up between working and researching", () => {
@@ -107,11 +132,9 @@ describe("AnimationController", () => {
     const [c, t] = settled("idle");
     c.setState("working", t);
     c.setState("idle", t + 10); // changed its mind
-    expect(timeline(c, t + 10, t + ms("sit_down") + ms("stand_up") + 10)).toEqual([
-      "sit_down",
-      "stand_up",
-      "idle",
-    ]);
+    expect(
+      timeline(c, t + 10, t + ms("sit_down") + ms("stand_up") + 10),
+    ).toEqual(["sit_down", "stand_up", "idle"]);
   });
 
   it("leaving stands up, plays once and then holds still", () => {
@@ -119,7 +142,10 @@ describe("AnimationController", () => {
     c.setState("leaving", t);
     const end = t + ms("stand_up") + ms("leave");
     expect(timeline(c, t, end + 1000)).toEqual(["stand_up", "leave"]);
-    expect(c.current(end + 1000)).toMatchObject({ clip: "leave", nextChangeAt: null });
+    expect(c.current(end + 1000)).toMatchObject({
+      clip: "leave",
+      nextChangeAt: null,
+    });
   });
 
   it("the same state again does not restart the loop", () => {
@@ -133,11 +159,14 @@ describe("AnimationController", () => {
     const rolls = [0.5, 0, 0.99];
     let i = 0;
     const random = () => rolls[i++ % rolls.length];
-    const c = new AnimationController("idle", 0, { clips: atlas.clips, random });
+    const c = new AnimationController("idle", 0, {
+      clips: atlas.clips,
+      random,
+    });
     const idleStart = ms("spawn");
     // First roll 0.5 → extra after 8 s + 0.5 × 12 s = 14 s, on the next step of the
     // shared idle grid; second roll 0 picks idle_look.
-    const grid = atlas.clips.get("idle")!.frames[0].duration;
+    const grid = gridOf(atlas.clips.get("idle")!)!;
     const extraAt = Math.ceil((idleStart + 14_000) / grid) * grid;
     expect(extraAt - idleStart).toBeGreaterThanOrEqual(14_000);
     expect(extraAt - idleStart).toBeLessThan(14_000 + grid);
@@ -201,10 +230,14 @@ describe("excursions", () => {
 
 describe("phase and the shared redraw grid", () => {
   const idle = atlas.clips.get("idle")!;
-  const frameMs = idle.frames[0].duration;
+  const grid = gridOf(idle)!;
   /** When the idle loop of a buddy created at `at` with `phase` next changes frame. */
   const changes = (at: number, phase: number) => {
-    const c = new AnimationController("idle", at, { clips: atlas.clips, reduceMotion: true, phase });
+    const c = new AnimationController("idle", at, {
+      clips: atlas.clips,
+      reduceMotion: true,
+      phase,
+    });
     const t = at + ms("spawn") + 37;
     return { first: c.current(t).nextChangeAt!, frame: c.current(t).frame };
   };
@@ -212,11 +245,50 @@ describe("phase and the shared redraw grid", () => {
   it("buddies created at different times change frames at the same instants", () => {
     const a = changes(0, 0.1);
     const b = changes(1234.5, 0.6);
-    expect(a.first % frameMs).toBeCloseTo(0);
-    expect(b.first % frameMs).toBeCloseTo(0);
+    expect(a.first % grid).toBeCloseTo(0);
+    expect(b.first % grid).toBeCloseTo(0);
   });
 
   it("the phase picks a different frame, so they do not move in lockstep", () => {
     expect(changes(0, 0).frame).not.toBe(changes(0, 0.4).frame);
+  });
+});
+
+describe("gridOf", () => {
+  const clip = (durations: number[]) => ({
+    name: "test",
+    frames: durations.map((duration) => ({
+      x: 0,
+      y: 0,
+      w: 32,
+      h: 32,
+      duration,
+    })),
+    duration: durations.reduce((a, b) => a + b, 0),
+  });
+
+  it("is the longest time every frame lasts a whole number of", () => {
+    expect(gridOf(clip([125, 125, 125]))).toBe(125);
+    expect(gridOf(clip([1000, 1000, 625, 125, 250]))).toBe(125);
+    expect(gridOf(clip([250, 500, 500, 250]))).toBe(250);
+  });
+
+  it("is null for frame times that are not whole milliseconds", () => {
+    expect(gridOf(clip([100 / 3, 100]))).toBeNull();
+  });
+
+  it("every clip a resting buddy plays is on the 125 ms grid", () => {
+    for (const name of [
+      "idle",
+      "idle_look",
+      "idle_stretch",
+      "idle_scratch",
+      "work_type",
+      "research_read",
+      "wait_wave",
+      "sleep",
+    ]) {
+      expect(gridOf(atlas.clips.get(name)!)! % 125, name).toBe(0);
+    }
   });
 });

@@ -16,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Hover balloon.** Hovering a buddy shows a pixel-art speech balloon that says what its session is doing in plain words ("Editing app.ts", "Running pnpm", "Waiting for you"), with the project and for how long (#76).
 - **Livelier Clawd.** He pops in from a puff, breathes slowly and blinks, looks where he walks, sits back down after being thrown, and leaves in a puff. Buddies no longer move in lockstep (#79).
-- **Lighter with many buddies.** Resting buddies share one animation clock, so a whole group redraws at most 8 times a second however many buddies there are (an idle group 4 to 5 times). Walking redraws 20 times a second, and only while someone walks (#79).
+- **Lighter with many buddies.** Resting buddies share one animation clock and redraw only when their picture changes, so a whole group redraws at most 8 times a second however many buddies there are (one idle buddy about twice a second). Walking redraws 20 times a second, and only while someone walks (#79).
 
 ### Fixed
 

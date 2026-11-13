@@ -16,10 +16,10 @@
 | Name | Frames (approx.) | Loop | Used for |
 | --- | --- | --- | --- |
 | `spawn` | 8 | no | Pops in where it stands: a puff, a tiny Clawd springing up, a squashy landing, arms up |
-| `idle` | 12 | yes | Slow breathing (3 s loop, the body sinks a pixel for a second) with a blink; random extras every 8–20 s: `idle_look`, `idle_stretch`, `idle_scratch` |
+| `idle` | 5 | yes | Slow breathing (3 s loop, the body sinks a pixel for a second) with a quick blink; random extras every 8–20 s: `idle_look`, `idle_stretch`, `idle_scratch` |
 | `sit_down` | 4 | no | Transition into working/researching |
 | `work_type` | 6 | yes | Sitting, laptop open, typing; occasional screen glow |
-| `research_read` | 6 | yes | Sitting, holding a paper sheet, eyes moving; occasional page flip |
+| `research_read` | 4 | yes | Sitting, holding a paper sheet, eyes moving; occasional page flip |
 | `stand_up` | 4 | no | Leaving a sitting state |
 | `wait_wave` | 6 | yes | Standing, waving, `!` bubble bobbing |
 | `sleep` | 4 | yes | Curled up, `z` bubbles |
@@ -55,7 +55,7 @@ Implemented in `apps/desktop/src/overlay/controller.ts`:
 - Idle extras (`idle_look`, `idle_stretch`, `idle_scratch`) start 8–20 s into each `idle` loop, picked at random. They are deadlines the render loop sleeps until, not timers. Reduce motion turns them off.
 - Clips follow each other at exact times, so what shows depends only on the timestamps, not on how often the overlay redraws.
 - **Out of step:** each buddy starts its loops at its own phase (a hash of its session id picks the frame it starts on), so buddies that appear together do not breathe, blink and type in lockstep.
-- **Shared timing grid:** loops whose frames all last the same time change frames at multiples of that time on one clock, whenever the buddy started, and idle extras start on the idle loop's grid. See [Redraws](#redraws).
+- **Shared timing grid:** a loop's frame changes fall on multiples of its grid (the longest time every frame lasts a whole number of) on one clock, whenever the buddy started, and idle extras start on the idle loop's grid. See [Redraws](#redraws).
 - **Back from an excursion** (throw, stroll, visit), where it stood and walked, the controller plays the way into the current state again from standing: a working buddy sits back down instead of popping into its chair.
 
 ## Layout
@@ -141,7 +141,8 @@ Implemented in `apps/desktop/src/overlay/hoverCard.ts` (text, timing, placement)
 
 The overlay draws only when a frame changes: the render loop sleeps until the scene's next change (`nextChangeAt`), with no polling and no repeating timer.
 
-- **At rest** (idle, working, researching, waiting, sleeping, with or without idle extras), every clip uses 125 ms or a multiple of it per frame: `idle` and `idle_look` 250 ms, `sleep` 500 ms, the others 125 ms. The controller puts loops on one shared grid, so all buddies change frames at the same instants: a resting group redraws at most 8 times a second however many buddies there are (an idle group about 4 to 5 times; a sleeping one twice).
+- **At rest** (idle, working, researching, waiting, sleeping, with or without idle extras), every frame lasts a multiple of 125 ms (`idle` breathes in 1 s frames with a 125 ms blink, `sleep` 500 ms). The controller puts loops on one shared clock, so all buddies change frames on the same 125 ms steps: a resting group redraws at most 8 times a second however many buddies there are.
+- **Only when the picture changes:** when the atlas is generated, a frame that looks the same as the one before it is merged into it (a longer frame), so a buddy holding a pose does not cause redraws. Measured over a simulated minute: one idle buddy redraws about twice a second, three about 4 times, eight about 7; a sleeping group twice; a working one 8.
 - **Walking** (strolls, visits, walking up to a freed slot): 20 redraws a second, only while someone walks.
 - **Held, flying or hopping:** 30 a second, only while that lasts.
 - A frame change is never asked for at the current instant, so rounding cannot make the loop draw the same frame twice.

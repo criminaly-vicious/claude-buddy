@@ -249,7 +249,7 @@ No. It only observes. It never sends input to a session or approves anything for
 
 ### How heavy is it?
 
-It is designed to use under 1% CPU and under 80 MB of RAM with five buddies on screen. It only redraws when something changes: while the buddies rest, all of them share one animation clock, so a whole group redraws a few times a second at most, however many there are. It draws more often only while a buddy walks, strolls or flies, and only for as long as that lasts.
+It is designed to use under 1% CPU and under 80 MB of RAM with five buddies on screen. It only redraws when a buddy's picture changes: while the buddies rest, all of them share one animation clock, so a whole group redraws a few times a second at most, however many there are. It draws more often only while a buddy walks, strolls or flies, and only for as long as that lasts.
 
 ### Is this made by Anthropic?
 
