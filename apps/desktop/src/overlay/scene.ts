@@ -1,0 +1,436 @@
+/**
+ * What is on screen: one buddy per session, the frame its animation
+ * controller shows now, where it stands in the group layout, the `+N` chip,
+ * and the hit regions. Buddies whose slot moves walk there (`walk` clip).
+ * Pure (time is passed in), so it is tested without a canvas.
+ */
+
+import { Atlas, Clip, Frame, frameAt } from "../sprites/atlas";
+import type { SessionView } from "../types";
+import { AnimationController, ControllerOptions } from "./controller";
+import { FloorPosition, layout, toCanvas } from "./layout";
+import type { Corner, HitRegion } from "./native";
+import { Bounds, Point, Throw, ThrowClips } from "./throw";
+
+/** Sprite frame size in the atlas, in sprite pixels. */
+export const SPRITE_SIZE = 32;
+/** Gap between buddies and the waiting step, in sprite pixels (spec: 4 px). */
+const GAP = 4;
+const STEP = 4;
+/** Walking speed, in sprite pixels per second. */
+const WALK_SPEED = 64;
+/** Redraw interval while something moves (the loop caps at 30 fps anyway). */
+const MOVE_FRAME_MS = 1000 / 30;
+/** The happy hop after a click (#23): how long and how high, in sprite pixels. */
+export const HOP_MS = 320;
+const HOP_HEIGHT = 6;
+
+export interface Viewport {
+  /** Canvas size in device pixels. */
+  width: number;
+  height: number;
+  /** Device pixels per CSS pixel. */
+  devicePixelRatio: number;
+  /** Buddy scale in CSS pixels per sprite pixel (settings: 1x/2x/3x). */
+  scale: number;
+  /**
+   * Where the group's corner area lies on the canvas, in device pixels.
+   * The whole canvas unless the overlay is expanded for a throw.
+   */
+  home?: { x: number; y: number; width: number; height: number };
+}
+
+/** An area in CSS pixels relative to the home area's top-left corner. */
+export interface Area {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+export interface PlacedSprite {
+  id: string;
+  frame: Frame;
+  /** Top-left corner and size on the canvas, in whole device pixels. */
+  x: number;
+  y: number;
+  size: number;
+  /**
+   * Vertical drawing offset of a hop, in whole device pixels. `x`, `y` and
+   * the hit region stay at the buddy's place, so the card does not bounce.
+   */
+  hop: number;
+}
+
+export interface PlacedChip {
+  hidden: number;
+  x: number;
+  y: number;
+  size: number;
+}
+
+export interface SceneFrame {
+  sprites: PlacedSprite[];
+  chip: PlacedChip | null;
+  regions: HitRegion[];
+  /** Space the group needs, in CSS pixels, so the window can fit it. */
+  contentSize: { width: number; height: number };
+  /** When the picture next changes (same clock as `now`), or `null` if static. */
+  nextChangeAt: number | null;
+}
+
+interface Walk {
+  from: number;
+  to: number;
+  startedAt: number;
+}
+
+interface Buddy {
+  view: SessionView;
+  animation: AnimationController;
+  /** Floor offset in sprite pixels while standing still; `null` until placed. */
+  offset: number | null;
+  walk: Walk | null;
+  /** When the last hop started. */
+  hopAt: number | null;
+}
+
+export class Scene {
+  /** Insertion order is creation order: oldest next to the corner. */
+  private buddies = new Map<string, Buddy>();
+  private corner: Corner = "bottom-right";
+  private expanded = false;
+  private chipRegion: HitRegion | null = null;
+  /** When the slots last changed, so walks start then, not at the next render. */
+  private layoutChangedAt = 0;
+  private readonly walkClip: Clip;
+  private readonly throwClips: ThrowClips;
+  /** Buddies being dragged or thrown, until they are back in their slot. */
+  private throws = new Map<string, Throw>();
+  private grabbed: string | null = null;
+  /** Where thrown buddies may fly: the work area, relative to home (CSS px). */
+  private workArea: Area | null = null;
+  /** Last drawn place of each buddy (home-relative CSS px), and the sprite size there. */
+  private placed = new Map<string, Point>();
+  private spriteCss = SPRITE_SIZE;
+  private homeCss = { width: 0, height: 0 };
+  private walkSpeedCss = WALK_SPEED;
+
+  constructor(
+    private readonly atlas: Atlas,
+    private options: Omit<ControllerOptions, "clips"> = {},
+  ) {
+    const walk = atlas.clips.get("walk");
+    if (!walk) throw new Error('atlas has no "walk" animation');
+    this.walkClip = walk;
+    const clip = (name: string) => {
+      const found = atlas.clips.get(name);
+      if (!found) throw new Error(`atlas has no "${name}" animation`);
+      return found;
+    };
+    this.throwClips = {
+      grabbed: clip("grabbed"),
+      fly: clip("fly"),
+      land: clip("land"),
+      land_splat: clip("land_splat"),
+      dizzy: clip("dizzy"),
+      walk,
+    };
+  }
+
+  /** Settings: random idle extras off or on, for every buddy now and later. */
+  setReduceMotion(on: boolean, now: number): void {
+    this.options = { ...this.options, reduceMotion: on };
+    for (const buddy of this.buddies.values()) buddy.animation.setReduceMotion(on, now);
+  }
+
+  /** Whether any buddy is held, flying, landing or walking back from a throw. */
+  get busy(): boolean {
+    return this.throws.size > 0;
+  }
+
+  isThrown(id: string): boolean {
+    return this.throws.has(id);
+  }
+
+  /** The area thrown buddies bounce in (the expanded overlay), home-relative CSS px. */
+  setWorkArea(area: Area): void {
+    this.workArea = area;
+    for (const t of this.throws.values()) t.setBounds(this.bounds());
+  }
+
+  /**
+   * Picks up buddy `id` at `pointer` (home-relative CSS px). Works on a
+   * buddy in mid-air too. Returns whether there was a buddy to grab.
+   */
+  grab(id: string, pointer: Point, now: number): boolean {
+    const at = this.throws.get(id)?.update(now, pointer) ?? this.placed.get(id);
+    if (!at || !this.buddies.has(id)) return false;
+    this.throws.set(
+      id,
+      new Throw({ x: at.x, y: at.y }, pointer, now, {
+        clips: this.throwClips,
+        bounds: this.bounds(),
+        walkSpeed: this.walkSpeedCss,
+      }),
+    );
+    this.grabbed = id;
+    return true;
+  }
+
+  /** The held buddy follows the pointer (home-relative CSS px). */
+  drag(pointer: Point, now: number): void {
+    if (this.grabbed) this.throws.get(this.grabbed)?.drag(pointer, now);
+  }
+
+  /** Lets go of the held buddy. */
+  release(now: number): void {
+    if (this.grabbed) this.throws.get(this.grabbed)?.release(now);
+    this.grabbed = null;
+  }
+
+  /** Where a sprite's corner may go: the work area minus the sprite (or the home area). */
+  private bounds(): Bounds {
+    const area = this.workArea ?? {
+      left: 0,
+      top: 0,
+      right: this.homeCss.width,
+      bottom: this.homeCss.height,
+    };
+    return {
+      left: area.left,
+      top: area.top,
+      right: Math.max(area.left, area.right - this.spriteCss),
+      bottom: Math.max(area.top, area.bottom - this.spriteCss),
+    };
+  }
+
+  get size(): number {
+    return this.buddies.size;
+  }
+
+  /** The session behind a buddy, for the hover card. */
+  view(id: string): SessionView | undefined {
+    return this.buddies.get(id)?.view;
+  }
+
+  get currentCorner(): Corner {
+    return this.corner;
+  }
+
+  setCorner(corner: Corner): void {
+    this.corner = corner;
+  }
+
+  /** Show every buddy instead of the `+N` chip (pointer on the chip). */
+  setExpanded(expanded: boolean): void {
+    this.expanded = expanded;
+  }
+
+  /** Whether a CSS-pixel point is on the `+N` chip (as last rendered). */
+  chipContains(x: number, y: number): boolean {
+    const r = this.chipRegion;
+    return r !== null && x >= r.x && y >= r.y && x < r.x + r.width && y < r.y + r.height;
+  }
+
+  /** Replaces all sessions (`sessions:snapshot`, mock feed). */
+  setSessions(views: SessionView[], now: number): void {
+    const ids = new Set(views.map((v) => v.id));
+    for (const id of [...this.buddies.keys()]) {
+      if (!ids.has(id)) this.remove(id, now);
+    }
+    for (const view of views) this.update(view, now);
+  }
+
+  /** One session changed (`sessions:update`). */
+  update(view: SessionView, now: number): void {
+    const existing = this.buddies.get(view.id);
+    if (existing) {
+      existing.view = view;
+      existing.animation.setState(view.state, now);
+      return;
+    }
+    this.buddies.set(view.id, {
+      view,
+      animation: new AnimationController(view.state, now, {
+        ...this.options,
+        clips: this.atlas.clips,
+      }),
+      offset: null,
+      walk: null,
+      hopAt: null,
+    });
+  }
+
+  /** The buddy does a small happy hop (its terminal was focused). */
+  hop(id: string, now: number): void {
+    const buddy = this.buddies.get(id);
+    if (buddy) buddy.hopAt = now;
+  }
+
+  /** A session is gone (`sessions:remove`); the buddies behind it walk up. */
+  remove(id: string, now: number): void {
+    if (this.buddies.delete(id)) this.layoutChangedAt = now;
+    this.throws.delete(id);
+    this.placed.delete(id);
+    if (this.grabbed === id) this.grabbed = null;
+  }
+
+  render(now: number, viewport: Viewport): SceneFrame {
+    // Whole device pixels per sprite pixel, so pixel art stays crisp.
+    const pixel = Math.max(1, Math.round(viewport.scale * viewport.devicePixelRatio));
+    const size = SPRITE_SIZE * pixel;
+    const css = viewport.devicePixelRatio;
+    const home = viewport.home ?? { x: 0, y: 0, width: viewport.width, height: viewport.height };
+    this.spriteCss = size / css;
+    this.homeCss = { width: home.width / css, height: home.height / css };
+    this.walkSpeedCss = WALK_SPEED * viewport.scale;
+
+    const waiting = new Set(
+      [...this.buddies].filter(([, b]) => b.view.state === "waiting").map(([id]) => id),
+    );
+    // Laid out in sprite pixels, so a DPI or scale change never starts a walk.
+    const plan = layout({
+      ids: [...this.buddies.keys()],
+      waiting,
+      size: SPRITE_SIZE,
+      gap: GAP,
+      step: STEP,
+      expanded: this.expanded,
+    });
+    // Rounded: mid-walk offsets are fractional, and pixel art must stay on whole pixels.
+    const place = (pos: FloorPosition) => {
+      const at = toCanvas(
+        { offset: Math.round(pos.offset * pixel), lift: pos.lift * pixel },
+        this.corner,
+        home,
+        size,
+      );
+      return { x: at.x + home.x, y: at.y + home.y };
+    };
+    const toHome = (p: Point): Point => ({ x: (p.x - home.x) / css, y: (p.y - home.y) / css });
+
+    const sprites: PlacedSprite[] = [];
+    const regions: HitRegion[] = [];
+    let nextChangeAt: number | null = null;
+    const changeAt = (t: number | null) => {
+      if (t !== null) nextChangeAt = nextChangeAt === null ? t : Math.min(nextChangeAt, t);
+    };
+
+    for (const [id, buddy] of this.buddies) {
+      const target = plan.buddies.get(id);
+      const thrown = this.throws.get(id);
+      if (thrown) {
+        // In the air or on its way back: logically it already holds its slot.
+        if (target) {
+          buddy.offset = target.offset;
+          buddy.walk = null;
+        }
+        const slot = target ? toHome(place(target)) : (this.placed.get(id) ?? { x: 0, y: 0 });
+        const shown = thrown.update(now, slot);
+        if (shown.phase === "done") {
+          this.throws.delete(id);
+        } else {
+          const x = Math.round(home.x + shown.x * css);
+          const y = Math.round(home.y + shown.y * css);
+          sprites.push({ id, frame: shown.frame, x, y, size, hop: 0 });
+          regions.push({ x: x / css, y: y / css, width: size / css, height: size / css });
+          this.placed.set(id, { x: shown.x, y: shown.y });
+          changeAt(now + MOVE_FRAME_MS);
+          continue;
+        }
+      }
+      if (!target) {
+        // Hidden behind the chip: placed afresh (no walk) when it reappears.
+        buddy.offset = null;
+        buddy.walk = null;
+        continue;
+      }
+      const offset = this.moveTowards(buddy, target.offset, now);
+      const walking = buddy.walk !== null;
+      let frame: Frame;
+      if (walking) {
+        const walk = buddy.walk as Walk;
+        frame = frameAt(this.walkClip, now - walk.startedAt, true).frame;
+        changeAt(now + MOVE_FRAME_MS);
+      } else {
+        const showing = buddy.animation.current(now);
+        frame = showing.frame;
+        changeAt(showing.nextChangeAt);
+      }
+      const { x, y } = place({ offset, lift: target.lift });
+      const lift = this.hopLift(buddy, now);
+      if (lift > 0) changeAt(now + MOVE_FRAME_MS);
+      // Away from the floor: up in bottom corners, down in top ones.
+      const hop = lift === 0 ? 0 : (this.corner.startsWith("bottom") ? -lift : lift) * pixel;
+      sprites.push({ id, frame, x, y, size, hop });
+      this.placed.set(id, toHome({ x, y }));
+      regions.push({ x: x / css, y: y / css, width: size / css, height: size / css });
+    }
+
+    let chip: PlacedChip | null = null;
+    this.chipRegion = null;
+    if (plan.chip) {
+      const { x, y } = place(plan.chip);
+      chip = { hidden: plan.chip.hidden, x, y, size };
+      this.chipRegion = { x: x / css, y: y / css, width: size / css, height: size / css };
+      regions.push(this.chipRegion);
+    }
+
+    return {
+      sprites,
+      chip,
+      regions,
+      contentSize: {
+        width: plan.extent.along * viewport.scale,
+        height: plan.extent.across * viewport.scale,
+      },
+      nextChangeAt,
+    };
+  }
+
+  /**
+   * Floor offset of `buddy` now, in sprite pixels, starting or finishing a
+   * walk towards `target`. A position is a function of time, so the result
+   * does not depend on how often this runs.
+   */
+  private moveTowards(buddy: Buddy, target: number, now: number): number {
+    if (buddy.offset === null && buddy.walk === null) {
+      // New or reappearing: stand in the slot straight away.
+      buddy.offset = target;
+      return target;
+    }
+    if (buddy.walk === null ? buddy.offset !== target : buddy.walk.to !== target) {
+      // The slot changed (when the layout did): walk there from where the
+      // buddy was at that moment, mid-walk or standing.
+      const startedAt = Math.min(Math.max(this.layoutChangedAt, buddy.walk?.startedAt ?? 0), now);
+      buddy.walk = { from: this.offsetAt(buddy, startedAt), to: target, startedAt };
+    }
+    const position = this.offsetAt(buddy, now);
+    if (buddy.walk && position === buddy.walk.to) {
+      buddy.offset = buddy.walk.to;
+      buddy.walk = null;
+    }
+    return position;
+  }
+
+  /** Height of the current hop in whole sprite pixels (a parabola), 0 when done. */
+  private hopLift(buddy: Buddy, now: number): number {
+    if (buddy.hopAt === null) return 0;
+    const t = (now - buddy.hopAt) / HOP_MS;
+    if (t < 0 || t >= 1) {
+      if (t >= 1) buddy.hopAt = null;
+      return 0;
+    }
+    return Math.round(HOP_HEIGHT * 4 * t * (1 - t));
+  }
+
+  private offsetAt(buddy: Buddy, now: number): number {
+    const walk = buddy.walk;
+    if (!walk) return buddy.offset ?? 0;
+    const travelled = (WALK_SPEED * Math.max(0, now - walk.startedAt)) / 1000;
+    const distance = Math.abs(walk.to - walk.from);
+    if (travelled >= distance) return walk.to;
+    return walk.from + Math.sign(walk.to - walk.from) * travelled;
+  }
+}

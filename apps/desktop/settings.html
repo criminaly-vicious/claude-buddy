@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Claude Buddy settings</title>
+    <link rel="stylesheet" href="/src/settings/settings.css" />
+  </head>
+  <body>
+    <main>
+      <h1>Claude Buddy</h1>
+
+      <section>
+        <h2>Buddies</h2>
+        <label>Corner
+          <select id="corner">
+            <option value="bottom-right">Bottom right</option>
+            <option value="bottom-left">Bottom left</option>
+            <option value="top-right">Top right</option>
+            <option value="top-left">Top left</option>
+          </select>
+        </label>
+        <label>Monitor
+          <select id="monitor"><option value="">Primary monitor</option></select>
+        </label>
+        <fieldset>
+          <legend>Size</legend>
+          <label class="inline"><input type="radio" name="scale" value="1" /> 1×</label>
+          <label class="inline"><input type="radio" name="scale" value="2" /> 2×</label>
+          <label class="inline"><input type="radio" name="scale" value="3" /> 3×</label>
+        </fieldset>
+        <label>Fall asleep after
+          <span class="row"><input id="idle" type="number" min="1" max="120" step="1" /> minutes idle</span>
+        </label>
+        <label class="inline"><input id="reduce-motion" type="checkbox" /> Reduce motion (no random idle animations)</label>
+      </section>
+
+      <section>
+        <h2>Startup</h2>
+        <label class="inline"><input id="autostart" type="checkbox" /> Start with Windows</label>
+        <p id="autostart-error" class="error" hidden></p>
+        <label>Show / hide hotkey
+          <span class="row">
+            <input id="hotkey" type="text" readonly placeholder="None" aria-describedby="hotkey-help" />
+            <button id="hotkey-clear" type="button">None</button>
+          </span>
+        </label>
+        <p id="hotkey-help" class="detail">Click the box and press the keys, e.g. Ctrl+Alt+B.</p>
+        <p id="hotkey-error" class="error" hidden></p>
+      </section>
+
+      <section>
+        <h2>Claude Code hooks</h2>
+        <p id="hook-status" class="status">Checking…</p>
+        <p class="detail">Last hook event: <span id="last-event">…</span></p>
+        <p class="detail" id="settings-path"></p>
+        <p class="detail">Install, repair or remove the hooks from the tray menu.</p>
+        <button id="refresh" type="button">Refresh</button>
+      </section>
+
+      <p id="error" class="error" hidden></p>
+    </main>
+    <script type="module" src="/src/settings/main.ts"></script>
+  </body>
+</html>

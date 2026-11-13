@@ -1,0 +1,6 @@
+{
+  "model": "opus",
+  "hooks": {
+    // comments are not JSON
+  }
+}

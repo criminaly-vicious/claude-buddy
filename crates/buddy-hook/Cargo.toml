@@ -1,0 +1,11 @@
+[package]
+name = "buddy-hook"
+description = "Forwards Claude Code hook events to the Claude Buddy app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+bridge-protocol = { path = "../bridge-protocol" }
+serde_json = "1"

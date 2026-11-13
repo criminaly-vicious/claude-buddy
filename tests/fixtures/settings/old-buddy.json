@@ -1,0 +1,36 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/user/bin/audit-bash.sh"
+          },
+          {
+            "type": "command",
+            "command": "C:\\Program Files\\Claude Buddy\\buddy-hook.exe",
+            "args": [
+              "PreToolUse"
+            ]
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C:\\Program Files\\Claude Buddy\\buddy-hook.exe",
+            "args": [
+              "SubagentStart"
+            ],
+            "async": true
+          }
+        ]
+      }
+    ]
+  },
+  "theme": "dark"
+}

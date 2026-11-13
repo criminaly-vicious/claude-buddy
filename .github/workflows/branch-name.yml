@@ -1,0 +1,35 @@
+name: Branch name
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions: {}
+
+jobs:
+  lint-branch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check branch name (see CONTRIBUTING.md#branch-naming)
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          work='^(feature|bugfix|docs|chore|spike)/[0-9]+-[a-z0-9]+(-[a-z0-9]+)*$'
+          version='^(release|hotfix)/[0-9]+\.[0-9]+\.[0-9]+$'
+          agent='^claude/[a-z0-9][a-z0-9._/-]*$'
+          longlived='^(main|develop)$'
+
+          if [[ ! "$HEAD_REF" =~ $work|$version|$agent|$longlived ]]; then
+            echo "::error::Branch '$HEAD_REF' does not follow <type>/<issue>-<description>, release/X.Y.Z or hotfix/X.Y.Z."
+            exit 1
+          fi
+          if [[ "$HEAD_REF" =~ $work && ${#HEAD_REF} -gt 50 ]]; then
+            echo "::error::Branch '$HEAD_REF' is longer than 50 characters."
+            exit 1
+          fi
+          if [[ "$BASE_REF" == "main" && ! "$HEAD_REF" =~ $version ]]; then
+            echo "::error::Only release/X.Y.Z and hotfix/X.Y.Z may target main (got '$HEAD_REF')."
+            exit 1
+          fi
+          echo "Branch '$HEAD_REF' -> '$BASE_REF' OK"

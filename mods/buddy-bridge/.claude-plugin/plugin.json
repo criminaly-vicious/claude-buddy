@@ -1,0 +1,16 @@
+{
+  "name": "buddy-bridge",
+  "version": "0.1.0",
+  "description": "Connects Claude Code to the Claude Buddy desktop app: reports what each session is doing so its buddy shows it.",
+  "author": {
+    "name": "Claude Buddy contributors"
+  },
+  "homepage": "https://github.com/criminaly-vicious/claude-buddy",
+  "repository": "https://github.com/criminaly-vicious/claude-buddy",
+  "license": "Apache-2.0",
+  "keywords": [
+    "claude-buddy",
+    "status",
+    "windows"
+  ]
+}

@@ -1,0 +1,26 @@
+name: Epic
+description: A larger goal split into several issues
+title: "epic: "
+labels: ["type:epic"]
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope and out of scope
+    validations:
+      required: true
+  - type: textarea
+    id: children
+    attributes:
+      label: Child issues
+      placeholder: "- [ ] #1\n- [ ] #2"
+  - type: textarea
+    id: success
+    attributes:
+      label: Success criteria
