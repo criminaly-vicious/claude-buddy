@@ -45,6 +45,8 @@ const C = {
   sweat: hex("#7CC6F2"),
   star: hex("#FFD54A"),
   dust: hex("#D8CFC4"),
+  dustLight: hex("#EAE4DC"),
+  heart: hex("#E5484D"),
 };
 
 // --- Layers ---------------------------------------------------------------------
@@ -324,7 +326,63 @@ function dust(layer, t) {
   }
 }
 
+/** A puff of smoke around Clawd's middle, for popping in and out (t 0..2). */
+function poof(layer, t) {
+  const blobs = [
+    [16, 22, 6],
+    [10, 24, 4],
+    [22, 24, 4],
+    [13, 18, 4],
+    [19, 18, 4],
+  ];
+  const grow = [0, 2, 3][t];
+  const colours = [C.dust, C.dust, C.dustLight];
+  for (const [cx, cy, r] of blobs) {
+    const rr = r + grow - (t === 2 ? 2 : 0);
+    if (rr <= 0) continue;
+    for (let y = cy - rr; y <= cy + rr; y++) {
+      for (let x = cx - rr; x <= cx + rr; x++) {
+        const d = (x - cx) ** 2 + (y - cy) ** 2;
+        // Wisps only at the end: a ring instead of a disc.
+        if (d <= rr * rr && (t < 2 || d >= (rr - 1) * (rr - 1))) layer.set(x, y, colours[t]);
+      }
+    }
+  }
+}
+
+/** Speech bubble over the head with `dots` (1..3) "…" dots: Clawd talking. */
+function talkBubble(layer, dots, bob = 0) {
+  layer.stamp(12, 2 + bob, [
+    ".kkkkkkk.",
+    "kpppppppk",
+    "kpppppppk",
+    "kpppppppk",
+    ".kkkkpkk.",
+    "....kk...",
+  ], { k: C.ink, p: C.paper });
+  for (let i = 0; i < dots; i++) layer.set(14 + i * 2, 4 + bob, C.ink);
+}
+
+/** Speech bubble over the head with a heart: the other buddy answering. */
+function replyBubble(layer, bob) {
+  layer.stamp(12, 2 + bob, [
+    ".kkkkkkk.",
+    "kpphpphpk",
+    "kphhhhhpk",
+    "kpphhhppk",
+    ".kkkhkkk.",
+    "..kk.....",
+  ], { k: C.ink, p: C.paper, h: C.heart });
+}
+
 // --- Clips --------------------------------------------------------------------------
+
+/** A layer with just the puff. */
+function poofOnly(t) {
+  const layer = new Layer();
+  poof(layer, t);
+  return layer;
+}
 
 const walkLegs = [
   [1, 0, 1, 0],
@@ -335,21 +393,42 @@ const walkLegs = [
   [0, 1, 0, 1],
 ];
 
-/** [tag, ms per frame, frames]; each frame returns a Layer. Spec order. */
+/**
+ * [tag, ms per frame (one number, or one per frame), frames]; each frame
+ * returns a Layer. Spec order, then the extra clips the overlay uses.
+ */
 const CLIPS = [
   [
     "spawn",
     100,
-    [-24, -16, -8, 0, 0, -3, -1, 0].map((dy, i) => () => {
-      const squash = i === 3 ? { w: 22, h: 10 } : i === 4 ? { w: 21, h: 11 } : {};
-      const base = new Layer();
-      if (i >= 3 && i <= 6) dust(base, i - 3);
-      if (i === 0) dust(base, 0);
-      const air = dy < 0;
-      return clawd({ ...squash, dy, legs: air ? [1, 1, 1, 1] : undefined, arms: air ? { left: "up", right: "up" } : {} }).layer.over(base);
-    }),
+    // Pops in where it stands: a puff, a tiny Clawd that springs up, a landing.
+    [
+      () => poofOnly(0),
+      () => clawd({ w: 10, h: 6, eyes: "closed", arms: { left: "none", right: "none" } }).layer.over(poofOnly(1)),
+      () => clawd({ w: 14, h: 9, dy: -3, arms: { left: "up", right: "up" }, legs: [1, 1, 1, 1] }).layer.over(poofOnly(2)),
+      () => clawd({ w: 18, h: 14, dy: -2, arms: { left: "up", right: "up" }, eyes: "wide" }).layer,
+      () => {
+        const base = new Layer();
+        dust(base, 0);
+        return clawd({ w: 23, h: 10, eyes: "closed" }).layer.over(base);
+      },
+      () => {
+        const base = new Layer();
+        dust(base, 1);
+        return clawd({ w: 21, h: 11 }).layer.over(base);
+      },
+      () => clawd({ arms: { left: "up", right: "up" }, eyes: "wide" }).layer,
+      () => clawd({}).layer,
+    ],
   ],
-  ["idle", 250, [0, 0, 1, 1].map((b) => () => clawd({ h: 12 - b }).layer)],
+  [
+    "idle",
+    // Slow breathing (the body sinks a pixel) and a quick blink.
+    [450, 450, 450, 450, 450, 380, 110, 260],
+    ["n", "n", "out", "out", "n", "n", "blink", "n"].map((f) => () =>
+      clawd({ h: f === "out" ? 11 : 12, eyes: f === "blink" ? "closed" : "open" }).layer,
+    ),
+  ],
   [
     "idle_look",
     150,
@@ -492,12 +571,44 @@ const CLIPS = [
   ],
   [
     "leave",
-    100,
-    [0, 0, 0, 4, 8, 13, 19, 32].map((dx, i) => () => {
-      if (i < 3) return clawd({ arms: { right: i === 1 ? "wave2" : "wave" } }).layer;
-      return clawd({ dx, legs: walkLegs[i % walkLegs.length] }).layer;
+    [160, 160, 160, 160, 100, 100, 110, 100],
+    // Waves goodbye, crouches and vanishes in a puff; the last frame is empty.
+    [
+      () => clawd({ arms: { right: "wave" } }).layer,
+      () => clawd({ arms: { right: "wave2" } }).layer,
+      () => clawd({ arms: { right: "wave" } }).layer,
+      () => clawd({ arms: { right: "wave2" }, eyes: "closed" }).layer,
+      () => clawd({ w: 22, h: 10, eyes: "closed" }).layer,
+      () => clawd({ w: 10, h: 6, eyes: "closed", arms: { left: "none", right: "none" } }).layer.over(poofOnly(0)),
+      () => poofOnly(1),
+      () => poofOnly(2),
+    ],
+  ],
+  // Walking towards a side (strolls and visits): the eyes lead.
+  ["walk_left", 100, walkLegs.map((legs, i) => () => clawd({ legs, dy: i % 3 === 1 ? -1 : 0, eyes: "left" }).layer)],
+  ["walk_right", 100, walkLegs.map((legs, i) => () => clawd({ legs, dy: i % 3 === 1 ? -1 : 0, eyes: "right" }).layer)],
+  [
+    "talk",
+    140,
+    // Chatting with another buddy: gestures and a speech bubble.
+    [1, 2, 3, 1, 2, 3].map((dots, i) => () => {
+      const arms = [{ left: "out" }, {}, { right: "out" }, {}, { left: "out" }, { right: "out" }][i];
+      const c = clawd({ arms, h: i % 3 === 1 ? 11 : 12 }).layer;
+      talkBubble(c, dots);
+      return c;
     }),
   ],
+  // Bubbles alone, drawn over a buddy without changing what it does.
+  ["fx_talk", 140, [1, 2, 3, 1, 2, 3].map((dots) => () => {
+    const c = new Layer();
+    talkBubble(c, dots);
+    return c;
+  })],
+  ["fx_reply", 180, [0, 1, 0, 1].map((bob) => () => {
+    const c = new Layer();
+    replyBubble(c, bob);
+    return c;
+  })],
 ];
 
 // --- Atlas -------------------------------------------------------------------------
@@ -506,7 +617,9 @@ const frames = [];
 const frameTags = [];
 for (const [name, duration, makers] of CLIPS) {
   const from = frames.length;
-  makers.forEach((make, index) => frames.push({ name, index, duration, layer: make() }));
+  makers.forEach((make, index) =>
+    frames.push({ name, index, duration: Array.isArray(duration) ? duration[index] : duration, layer: make() }),
+  );
   frameTags.push({ name, from, to: frames.length - 1, direction: "forward" });
 }
 
@@ -584,6 +697,7 @@ const FONT = {
   v: ["#.#", "#.#", "#.#", "#.#", ".#."],
   w: ["#.#", "#.#", "###", "###", "#.#"],
   y: ["#.#", "#.#", ".#.", ".#.", ".#."],
+  x: ["#.#", "#.#", ".#.", "#.#", "#.#"],
   z: ["###", "..#", ".#.", "#..", "###"],
   _: ["...", "...", "...", "...", "###"],
   " ": ["...", "...", "...", "...", "..."],
@@ -648,10 +762,15 @@ function demoGif() {
   };
   const tour = [
     ["spawn", 1],
-    ["idle", 2],
+    ["idle", 1],
     ["idle_look", 1],
+    ["walk_left", 3],
+    ["talk", 2],
+    ["walk_right", 3],
     ["sit_down", 1],
     ["work_type", 3],
+    ["stand_up", 1],
+    ["sit_down", 1],
     ["research_read", 2],
     ["stand_up", 1],
     ["wait_wave", 3],
@@ -659,12 +778,12 @@ function demoGif() {
     ["fly", 3],
     ["land_splat", 1],
     ["dizzy", 2],
-    ["walk", 2],
     ["sit_down", 1],
     ["sleep", 2],
     ["stand_up", 1],
     ["leave", 1],
   ];
+
   const out = [];
   for (const [tag, loops] of tour) {
     const t = frameTags.find((f) => f.name === tag);
