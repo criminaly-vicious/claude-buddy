@@ -64,7 +64,7 @@ function strollTiming(): StrollTiming {
   if (inTauri || new URLSearchParams(location.search).get("wander") !== "fast") {
     return DEFAULT_STROLLS;
   }
-  return { ...DEFAULT_STROLLS, first: [2_000, 5_000], every: [8_000, 14_000] };
+  return { ...DEFAULT_STROLLS, first: [2_000, 5_000], every: [8_000, 14_000], gap: [1_000, 3_000] };
 }
 
 async function start(): Promise<void> {

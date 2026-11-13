@@ -30,8 +30,10 @@ const STEP = 4;
 const WALK_SPEED = 64;
 /** Strolls and visits are a little slower, in sprite pixels per second. */
 const STROLL_SPEED = 40;
-/** Redraw interval while something moves (the loop caps at 30 fps anyway). */
+/** Redraw interval while something flies or hops (the loop caps at 30 fps anyway). */
 const MOVE_FRAME_MS = 1000 / 30;
+/** Redraw interval while buddies walk: 20 fps is plenty for pixel art at walking pace. */
+const WALK_FRAME_MS = 1000 / 20;
 /** The happy hop after a click (#23): how long and how high, in sprite pixels. */
 export const HOP_MS = 320;
 const HOP_HEIGHT = 6;
@@ -48,6 +50,8 @@ export interface StrollTiming {
   distance: [number, number];
   /** How long they look around before walking back. */
   pause: [number, number];
+  /** Quiet time after any stroll before the next one, whoever goes. */
+  gap: [number, number];
 }
 
 export const DEFAULT_STROLLS: StrollTiming = {
@@ -55,6 +59,7 @@ export const DEFAULT_STROLLS: StrollTiming = {
   every: [60_000, 180_000],
   distance: [40, 120],
   pause: [1_200, 2_800],
+  gap: [45_000, 90_000],
 };
 
 export interface SceneOptions extends Omit<ControllerOptions, "clips"> {
@@ -215,6 +220,8 @@ export class Scene {
   private homeCss = { width: 0, height: 0 };
   private readonly random: () => number;
   private readonly strolls: StrollTiming;
+  /** No stroll starts before this, so a big group is not always on the move. */
+  private nextStrollAnyAt = 0;
 
   constructor(
     private readonly atlas: Atlas,
@@ -540,7 +547,8 @@ export class Scene {
           this.visits.delete(id);
           buddy.animation.restart(now);
           // A stroll already booked the next one; after anything else, start over.
-          if (!(away instanceof Stroll)) buddy.strollAt = null;
+          if (away instanceof Stroll) this.nextStrollAnyAt = now + this.between(this.strolls.gap);
+          else buddy.strollAt = null;
         } else {
           this.noteReply(id, now);
           const { x, y } = toCanvasPoint(shown);
@@ -548,7 +556,7 @@ export class Scene {
           regions.push(region(x, y));
           this.placed.set(id, { x: shown.x, y: shown.y });
           this.pushEffects(id, x, y, size, now, effects, changeAt);
-          changeAt(now + MOVE_FRAME_MS);
+          changeAt(now + (away instanceof Thrown ? MOVE_FRAME_MS : WALK_FRAME_MS));
           continue;
         }
       }
@@ -564,7 +572,7 @@ export class Scene {
       if (walking) {
         const walk = buddy.walk as Walk;
         frame = frameAt(this.walkClip, now - walk.startedAt, true).frame;
-        changeAt(now + MOVE_FRAME_MS);
+        changeAt(now + WALK_FRAME_MS);
       } else {
         const showing = buddy.animation.current(now);
         frame = showing.frame;
@@ -675,7 +683,12 @@ export class Scene {
       return buddy.strollAt;
     }
     if (now < buddy.strollAt) return buddy.strollAt;
-    const someoneOut = [...this.away.values()].length > 0;
+    if (now < this.nextStrollAnyAt) {
+      // Someone strolled a moment ago: wait for the quiet time to pass.
+      buddy.strollAt = this.nextStrollAnyAt + this.between([0, 10_000]);
+      return buddy.strollAt;
+    }
+    const someoneOut = this.away.size > 0;
     if (someoneOut || clip !== "idle" || this.hovered === id || buddy.walk !== null) {
       // Not now: try again a little later.
       buddy.strollAt = now + this.between([4_000, 9_000]);
@@ -697,7 +710,7 @@ export class Scene {
       }),
     );
     buddy.strollAt = now + this.between(this.strolls.every);
-    return now + MOVE_FRAME_MS;
+    return now + WALK_FRAME_MS;
   }
 
   private between([min, max]: [number, number]): number {

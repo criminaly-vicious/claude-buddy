@@ -396,6 +396,11 @@ const walkLegs = [
 /**
  * [tag, ms per frame (one number, or one per frame), frames]; each frame
  * returns a Layer. Spec order, then the extra clips the overlay uses.
+ *
+ * The clips a resting buddy plays (idle and its extras, work, research,
+ * wait, sleep) use 125 ms or a multiple of it per frame: the overlay puts
+ * them on one shared timing grid, so a whole group redraws at most 8 times
+ * a second (see docs/animation-spec.md, "Redraws").
  */
 const CLIPS = [
   [
@@ -423,20 +428,22 @@ const CLIPS = [
   ],
   [
     "idle",
-    // Slow breathing (the body sinks a pixel) and a quick blink.
-    [450, 450, 450, 450, 450, 380, 110, 260],
-    ["n", "n", "out", "out", "n", "n", "blink", "n"].map((f) => () =>
+    // Slow breathing (the body sinks a pixel for a second) and a blink, every
+    // 3 s. Equal frames, so the overlay can put every idle buddy on one
+    // shared redraw grid (see the animation controller).
+    250,
+    ["n", "n", "n", "n", "out", "out", "out", "out", "n", "n", "blink", "n"].map((f) => () =>
       clawd({ h: f === "out" ? 11 : 12, eyes: f === "blink" ? "closed" : "open" }).layer,
     ),
   ],
   [
     "idle_look",
-    150,
+    250,
     ["open", "left", "left", "right", "right", "open"].map((eyes) => () => clawd({ eyes }).layer),
   ],
   [
     "idle_stretch",
-    120,
+    125,
     [0, 1, 2, 3, 3, 2, 1, 0].map((s) => () =>
       clawd({
         h: 12 + Math.min(s, 2),
@@ -448,7 +455,7 @@ const CLIPS = [
   ],
   [
     "idle_scratch",
-    120,
+    125,
     [0, 1, 0, 1, 0, 1].map((t) => () =>
       clawd({ arms: { right: "head" }, eyes: t ? "closed" : "open", dx: t ? 0 : 0, h: 12 - t }).layer,
     ),
@@ -463,7 +470,7 @@ const CLIPS = [
   ],
   [
     "work_type",
-    120,
+    125,
     [0, 1, 0, 1, 0, 1].map((press, i) => () => {
       const c = clawd({ pose: "sit", eyes: "down", arms: { left: "none", right: "none" } }).layer;
       laptop(c, i === 3 || i === 4);
@@ -473,7 +480,7 @@ const CLIPS = [
   ],
   [
     "research_read",
-    160,
+    125,
     ["left", "left", "down", "right", "right", "flip"].map((look) => () => {
       const c = clawd({
         pose: "sit",
@@ -494,7 +501,7 @@ const CLIPS = [
   ],
   [
     "wait_wave",
-    120,
+    125,
     [0, 1, 0, 1, 0, 1].map((t) => () => {
       const c = clawd({ arms: { right: t ? "wave2" : "wave" }, eyes: "wide" }).layer;
       alertBubble(c, 2, 2 + (t ? 1 : 0));
@@ -503,7 +510,7 @@ const CLIPS = [
   ],
   [
     "sleep",
-    400,
+    500,
     [0, 1, 2, 3].map((t) => () => {
       const c = clawd({ pose: "sit", eyes: "closed", h: t % 2 ? 11 : 12, w: t % 2 ? 21 : 20, arms: { left: "none", right: "none" } }).layer;
       zees(c, t);

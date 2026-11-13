@@ -16,7 +16,7 @@
 | Name | Frames (approx.) | Loop | Used for |
 | --- | --- | --- | --- |
 | `spawn` | 8 | no | Pops in where it stands: a puff, a tiny Clawd springing up, a squashy landing, arms up |
-| `idle` | 8 | yes | Slow breathing (3 s loop, the body sinks a pixel) with a quick blink; random extras every 8–20 s: `idle_look`, `idle_stretch`, `idle_scratch` |
+| `idle` | 12 | yes | Slow breathing (3 s loop, the body sinks a pixel for a second) with a blink; random extras every 8–20 s: `idle_look`, `idle_stretch`, `idle_scratch` |
 | `sit_down` | 4 | no | Transition into working/researching |
 | `work_type` | 6 | yes | Sitting, laptop open, typing; occasional screen glow |
 | `research_read` | 6 | yes | Sitting, holding a paper sheet, eyes moving; occasional page flip |
@@ -54,7 +54,8 @@ Implemented in `apps/desktop/src/overlay/controller.ts`:
 - `leave` plays once and holds its last frame until the session is removed.
 - Idle extras (`idle_look`, `idle_stretch`, `idle_scratch`) start 8–20 s into each `idle` loop, picked at random. They are deadlines the render loop sleeps until, not timers. Reduce motion turns them off.
 - Clips follow each other at exact times, so what shows depends only on the timestamps, not on how often the overlay redraws.
-- **Out of step:** each buddy starts its loops at its own phase (a hash of its session id), so buddies that appear together do not breathe, blink and type in lockstep.
+- **Out of step:** each buddy starts its loops at its own phase (a hash of its session id picks the frame it starts on), so buddies that appear together do not breathe, blink and type in lockstep.
+- **Shared timing grid:** loops whose frames all last the same time change frames at multiples of that time on one clock, whenever the buddy started, and idle extras start on the idle loop's grid. See [Redraws](#redraws).
 - **Back from an excursion** (throw, stroll, visit), where it stood and walked, the controller plays the way into the current state again from standing: a working buddy sits back down instead of popping into its chair.
 
 ## Layout
@@ -76,7 +77,7 @@ Implemented in `apps/desktop/src/overlay/layout.ts` and `scene.ts`:
 Now and then an idle buddy goes for a short walk along the floor, away from the corner, looks around and walks back.
 
 Implemented in `apps/desktop/src/overlay/excursion.ts` (`Stroll`, pure) and `scene.ts`:
-- **When:** the first stroll comes 30–90 s after a buddy turns idle, the next ones every 1–3 min. Only one buddy is out at a time, never the one under the pointer, never while it plays an idle extra, and never with reduce motion on.
+- **When:** the first stroll comes 30–90 s after a buddy turns idle, the next ones every 1–3 min. Only one buddy is out at a time, and after any stroll the whole group stays home for 45–90 s, so a big group is not always on the move. Never the one under the pointer, never while it plays an idle extra, and never with reduce motion on.
 - **How:** 40–120 sprite px towards the screen centre at 40 sprite px/s with `walk_left` / `walk_right`, a 1.2–2.8 s look around (`idle_look`), then back to its slot (following it if it moved).
 - **Called back:** if its session gets work meanwhile, it turns around at once, walks back and sits down.
 - **Window:** while someone strolls, the overlay grows to a strip along the floor (`overlay_expand` with `"floor"`: the work area's width, the corner area's height) and shrinks back when everyone is home.
@@ -135,6 +136,16 @@ Implemented in `apps/desktop/src/overlay/hoverCard.ts` (text, timing, placement)
 - A click on a buddy asks the backend to focus its session's terminal (docs/session-detection.md#window-focus-click-on-a-buddy). Clicks on the hover balloon do nothing.
 - **Happy hop:** when the window came to the front, the buddy hops 6 sprite px away from the floor and back in 320 ms (a parabola, whole sprite pixels), over whatever clip it is playing, sitting or standing, so no extra art is needed. The hit region and the hover balloon stay in place during the hop. No hop when nothing was focused.
 - In `pnpm dev:mock` there are no terminals, so every click hops.
+
+## Redraws
+
+The overlay draws only when a frame changes: the render loop sleeps until the scene's next change (`nextChangeAt`), with no polling and no repeating timer.
+
+- **At rest** (idle, working, researching, waiting, sleeping, with or without idle extras), every clip uses 125 ms or a multiple of it per frame: `idle` and `idle_look` 250 ms, `sleep` 500 ms, the others 125 ms. The controller puts loops on one shared grid, so all buddies change frames at the same instants: a resting group redraws at most 8 times a second however many buddies there are (an idle group about 4 to 5 times; a sleeping one twice).
+- **Walking** (strolls, visits, walking up to a freed slot): 20 redraws a second, only while someone walks.
+- **Held, flying or hopping:** 30 a second, only while that lasts.
+- A frame change is never asked for at the current instant, so rounding cannot make the loop draw the same frame twice.
+- One-shot clips (`spawn`, transitions, `leave`) start when their event arrives and run at their own frame times.
 
 ## Accessibility & comfort
 

@@ -135,8 +135,12 @@ describe("AnimationController", () => {
     const random = () => rolls[i++ % rolls.length];
     const c = new AnimationController("idle", 0, { clips: atlas.clips, random });
     const idleStart = ms("spawn");
-    // First roll 0.5 → extra after 8 s + 0.5 × 12 s = 14 s; second roll 0 picks idle_look.
-    const extraAt = idleStart + 14_000;
+    // First roll 0.5 → extra after 8 s + 0.5 × 12 s = 14 s, on the next step of the
+    // shared idle grid; second roll 0 picks idle_look.
+    const grid = atlas.clips.get("idle")!.frames[0].duration;
+    const extraAt = Math.ceil((idleStart + 14_000) / grid) * grid;
+    expect(extraAt - idleStart).toBeGreaterThanOrEqual(14_000);
+    expect(extraAt - idleStart).toBeLessThan(14_000 + grid);
     expect(c.current(extraAt - 1).clip).toBe("idle");
     expect(c.current(extraAt - 1).nextChangeAt).toBeLessThanOrEqual(extraAt);
     expect(c.current(extraAt).clip).toBe("idle_look");
@@ -195,15 +199,24 @@ describe("excursions", () => {
   });
 });
 
-describe("phase", () => {
-  it("starts loops part-way in, and changes frames at the right times", () => {
-    const idle = atlas.clips.get("idle")!;
-    const half = new AnimationController("idle", 0, { clips: atlas.clips, reduceMotion: true, phase: 0.5 });
-    const zero = new AnimationController("idle", 0, { clips: atlas.clips, reduceMotion: true });
-    const t = ms("spawn");
-    const a = half.current(t + 10);
-    const b = zero.current(t + 10 + idle.duration / 2);
-    expect(a.frame).toBe(b.frame);
-    expect(a.nextChangeAt! - (t + 10)).toBe(b.nextChangeAt! - (t + 10 + idle.duration / 2));
+describe("phase and the shared redraw grid", () => {
+  const idle = atlas.clips.get("idle")!;
+  const frameMs = idle.frames[0].duration;
+  /** When the idle loop of a buddy created at `at` with `phase` next changes frame. */
+  const changes = (at: number, phase: number) => {
+    const c = new AnimationController("idle", at, { clips: atlas.clips, reduceMotion: true, phase });
+    const t = at + ms("spawn") + 37;
+    return { first: c.current(t).nextChangeAt!, frame: c.current(t).frame };
+  };
+
+  it("buddies created at different times change frames at the same instants", () => {
+    const a = changes(0, 0.1);
+    const b = changes(1234.5, 0.6);
+    expect(a.first % frameMs).toBeCloseTo(0);
+    expect(b.first % frameMs).toBeCloseTo(0);
+  });
+
+  it("the phase picks a different frame, so they do not move in lockstep", () => {
+    expect(changes(0, 0).frame).not.toBe(changes(0, 0.4).frame);
   });
 });

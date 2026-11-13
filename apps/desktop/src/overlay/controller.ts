@@ -42,6 +42,12 @@ const EXTRA_SPREAD_MS = 12_000;
 
 export type Posture = "standing" | "sitting";
 
+/** The frame time of a clip whose frames all last the same, else null. */
+function frameMsOf(clip: Clip): number | null {
+  const d = clip.frames[0]?.duration ?? 0;
+  return d > 0 && clip.frames.every((f) => f.duration === d) ? d : null;
+}
+
 interface Step {
   clip: string;
   loop: boolean;
@@ -176,8 +182,7 @@ export class AnimationController {
   current(now: number): Showing {
     this.advance(now);
     const clip = this.clip(this.step.clip);
-    // Loops start part-way in, by this buddy's phase.
-    const shift = this.step.loop ? this.phase * clip.duration : 0;
+    const shift = this.loopShift(clip);
     const { frame, nextChangeAt } = frameAt(clip, now - this.startedAt + shift, this.step.loop);
     let next = nextChangeAt === null ? null : this.startedAt - shift + nextChangeAt;
     // A one-shot followed by another step changes when it ends.
@@ -187,6 +192,9 @@ export class AnimationController {
     if (this.nextExtraAt !== null && (next === null || this.nextExtraAt < next)) {
       next = this.nextExtraAt;
     }
+    // Rounding can put a frame change a hair before `now`; never ask for a
+    // redraw at `now` itself, or the loop would draw the same frame again.
+    if (next !== null && next <= now) next = now + 1;
     return { clip: this.step.clip, frame, nextChangeAt: next };
   }
 
@@ -221,6 +229,27 @@ export class AnimationController {
     }
   }
 
+  /**
+   * How far into a loop the buddy starts. Loops whose frames all last the
+   * same time go on a shared grid: every buddy changes frames at the same
+   * instants (multiples of the frame time), so a group costs one redraw per
+   * frame however many buddies there are, and the buddy's phase picks the
+   * frame it starts on, so they do not move in lockstep either.
+   */
+  private loopShift(clip: Clip): number {
+    if (!this.step.loop) return 0;
+    const d = frameMsOf(clip);
+    if (d === null) return this.phase * clip.duration;
+    const toGrid = ((this.startedAt % d) + d) % d;
+    return toGrid + Math.floor(this.phase * clip.frames.length) * d;
+  }
+
+  /** `t` moved on to the next frame change of the idle loop's grid. */
+  private onIdleGrid(t: number): number {
+    const d = frameMsOf(this.clip("idle"));
+    return d === null ? t : Math.ceil(t / d) * d;
+  }
+
   private startPlan(steps: Step[], at: number): void {
     const [first, ...rest] = steps;
     this.step = first;
@@ -230,9 +259,10 @@ export class AnimationController {
   }
 
   private enterStep(at: number): void {
+    // Extras start on the grid too, so they add no redraws of their own.
     this.nextExtraAt =
       this.step.clip === "idle" && this.step.loop && !this.reduceMotion
-        ? at + EXTRA_MIN_MS + this.random() * EXTRA_SPREAD_MS
+        ? this.onIdleGrid(at + EXTRA_MIN_MS + this.random() * EXTRA_SPREAD_MS)
         : null;
   }
 

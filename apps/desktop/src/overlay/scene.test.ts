@@ -4,7 +4,7 @@ import { parseAtlas } from "../sprites/atlas";
 import buddy from "../sprites/buddy/atlas.json";
 import type { BuddyState, SessionView } from "../types";
 import { HitRegionSync } from "./hitSync";
-import { BODY_BOX, HOP_MS, Scene, SPRITE_SIZE, Viewport } from "./scene";
+import { BODY_BOX, HOP_MS, Scene, SPRITE_SIZE, StrollTiming, Viewport } from "./scene";
 
 const atlas = parseAtlas(buddy);
 const viewport: Viewport = { width: 960, height: 320, devicePixelRatio: 2, scale: 2 };
@@ -138,7 +138,7 @@ describe("Scene group layout", () => {
     expect(c.frame).toEqual(
       atlas.clips.get("walk")!.frames.find((f) => f === c.frame) ?? "walk frame",
     );
-    expect(mid.nextChangeAt).toBeLessThanOrEqual(settledAt + 200 + 34);
+    expect(mid.nextChangeAt).toBeLessThanOrEqual(settledAt + 200 + 50);
 
     expect(xOf(scene, "c", settledAt + 2000)).toBe(start + slot);
     expect(xOf(scene, "a", settledAt + 2000)).toBe(960 - SPRITE_SIZE * px);
@@ -331,13 +331,51 @@ describe("Scene group layout", () => {
   });
 });
 
+describe("Scene redraws", () => {
+  /** A seeded random, so the test is the same every run. */
+  const seeded = (seed: number) => () => {
+    seed = (seed * 1_103_515_245 + 12_345) % 2 ** 31;
+    return seed / 2 ** 31;
+  };
+  const resting: BuddyState[] = ["idle", "working", "researching", "waiting", "sleeping"];
+
+  it("a resting group wakes the loop at most 8 times a second, however many buddies", () => {
+    for (const count of [1, 4, 10]) {
+      const scene = new Scene(atlas, {
+        random: seeded(count),
+        strolls: { first: [1e9, 1e9], every: [1e9, 1e9], distance: [50, 50], pause: [0, 0], gap: [0, 0] },
+      });
+      // They turn up at odd times, in every resting state.
+      const sessions: SessionView[] = [];
+      for (let i = 0; i < count; i++) {
+        sessions.push(view(`s${i}`, resting[i % resting.length]));
+        scene.setSessions([...sessions], i * 1_337.7);
+      }
+      const from = count * 1_337.7 + 5_000;
+      const wakeups: number[] = [];
+      for (let t = scene.render(from, viewport).nextChangeAt!; t < from + 60_000; ) {
+        wakeups.push(t);
+        const next = scene.render(t, viewport).nextChangeAt!;
+        // Always ahead of now, or the loop would draw the same frame again at once.
+        expect(next).toBeGreaterThan(t);
+        t = next;
+      }
+      // Every wakeup is a step of the shared 125 ms grid...
+      expect(wakeups.filter((t) => Math.abs(t / 125 - Math.round(t / 125)) > 1e-6)).toEqual([]);
+      // ...so there are at most 8 a second, the same for 1 buddy as for 10.
+      expect(wakeups.length / 60).toBeLessThanOrEqual(8);
+    }
+  });
+});
+
 describe("Scene excursions", () => {
   const spawnMs = atlas.clips.get("spawn")!.duration;
-  const calm = { first: [1000, 1000], every: [60_000, 60_000], distance: [50, 50], pause: [1000, 1000] } as {
-    first: [number, number];
-    every: [number, number];
-    distance: [number, number];
-    pause: [number, number];
+  const calm: StrollTiming = {
+    first: [1000, 1000],
+    every: [60_000, 60_000],
+    distance: [50, 50],
+    pause: [1000, 1000],
+    gap: [0, 0],
   };
   const frames = (name: string) => atlas.clips.get(name)!.frames;
 
@@ -366,6 +404,19 @@ describe("Scene excursions", () => {
     // Back in place at the end, and the overlay may shrink again.
     expect(seen.at(-1)!.frame.sprites.map((s) => s.x)).toEqual(rest);
     expect(scene.roomNeeded()).toBeNull();
+  });
+
+  it("keeps a quiet time between strolls, whoever goes", () => {
+    const scene = new Scene(atlas, { strolls: { ...calm, gap: [20_000, 20_000] }, random: () => 0 });
+    scene.setSessions([view("a", "idle"), view("b", "idle")], 0);
+    const rest = scene.render(spawnMs, viewport).sprites.map((s) => s.x);
+    const moving = (t: number) => scene.render(t, viewport).sprites.some((s, i) => s.x !== rest[i]);
+    // a goes at +1 s and is home by +4.5 s; b may not go before +24.5 s.
+    const seen: { t: number; moving: boolean }[] = [];
+    for (let t = spawnMs; t <= spawnMs + 30_000; t += 50) seen.push({ t, moving: moving(t) });
+    const starts = seen.filter((s, i) => s.moving && !seen[i - 1]?.moving).map((s) => s.t - spawnMs);
+    expect(starts).toHaveLength(2);
+    expect(starts[1] - starts[0]).toBeGreaterThanOrEqual(3_500 + 20_000);
   });
 
   it("asks for a floor strip while someone strolls", () => {

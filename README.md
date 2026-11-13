@@ -17,13 +17,15 @@ Claude Buddy is a lightweight Windows tray app that gives each running **Claude 
 | Working (editing files, running commands) | Sits down, opens a laptop and types |
 | Researching (reading, searching the web) | Reads a sheet of paper |
 | Waiting for you (permission prompt, question) | Stands up and waves, with a `!` bubble |
-| Idle | Looks around, stretches, falls asleep after a while |
+| Idle | Looks around, stretches, goes for a short stroll now and then, falls asleep after a while |
 | Ended | Waves goodbye and walks off |
 
-- **Hover** a buddy for its project, current tool and elapsed time.
+- **Hover** a buddy for a speech balloon saying what it is doing ("Editing app.ts", "Waiting for you"), its project and for how long.
+- **Strolls:** now and then an idle buddy wanders off along the floor, looks around and walks back.
+- **Sessions talking:** when one session messages another, its buddy walks over to the other's and they chat for a moment.
 - **Click** it to bring its terminal window to the front.
 - **Grab and throw** it: it bounces off the screen edges and walks back to its place.
-- **Tray app** with settings (corner, monitor, size, sleep time, reduce motion), start with Windows and a show/hide hotkey (`Ctrl+Alt+B`).
+- **Tray app** with settings (corner, monitor, size, sleep time, reduce motion: no strolls or walk-overs), start with Windows and a show/hide hotkey (`Ctrl+Alt+B`).
 - **Light:** designed for under 1% CPU at idle and under 80 MB of RAM.
 
 Full list in the [changelog](CHANGELOG.md).
