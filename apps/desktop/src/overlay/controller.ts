@@ -40,7 +40,7 @@ const IDLE_EXTRAS = ["idle_look", "idle_stretch", "idle_scratch"] as const;
 const EXTRA_MIN_MS = 8_000;
 const EXTRA_SPREAD_MS = 12_000;
 
-type Posture = "standing" | "sitting";
+export type Posture = "standing" | "sitting";
 
 interface Step {
   clip: string;
@@ -82,6 +82,11 @@ export interface ControllerOptions {
   random?: () => number;
   /** No random idle extras (accessibility setting). */
   reduceMotion?: boolean;
+  /**
+   * Where in its loops this buddy is (0..1), so buddies that appear
+   * together do not breathe, blink and type in lockstep.
+   */
+  phase?: number;
 }
 
 export interface Showing {
@@ -96,6 +101,7 @@ export class AnimationController {
   private readonly clips: ReadonlyMap<string, Clip>;
   private readonly random: () => number;
   private reduceMotion: boolean;
+  private readonly phase: number;
 
   private target: BuddyState;
   private step: Step;
@@ -109,6 +115,7 @@ export class AnimationController {
     this.clips = options.clips;
     this.random = options.random ?? Math.random;
     this.reduceMotion = options.reduceMotion ?? false;
+    this.phase = options.phase ?? 0;
     this.target = state;
     // A new buddy always pops in first (spec: spawning → spawn → idle);
     // one first seen mid-turn then goes straight to its state.
@@ -136,6 +143,23 @@ export class AnimationController {
     return this.target;
   }
 
+  /** Whether the buddy sits or stands at `now` (after the clip playing then). */
+  posture(now: number): Posture {
+    this.advance(now);
+    return this.postureAfter(this.step);
+  }
+
+  /**
+   * Back from an excursion (throw, stroll, visit), where it stood and
+   * walked: plays the way into the current state again from standing, so
+   * a working buddy sits down instead of popping into its chair.
+   */
+  restart(now: number): void {
+    this.advance(now);
+    const target = this.target === "spawning" ? "idle" : this.target;
+    this.startPlan(plan(target, "standing"), now);
+  }
+
   setState(state: BuddyState, now: number): void {
     this.advance(now);
     if (state === this.target) return;
@@ -152,8 +176,10 @@ export class AnimationController {
   current(now: number): Showing {
     this.advance(now);
     const clip = this.clip(this.step.clip);
-    const { frame, nextChangeAt } = frameAt(clip, now - this.startedAt, this.step.loop);
-    let next = nextChangeAt === null ? null : this.startedAt + nextChangeAt;
+    // Loops start part-way in, by this buddy's phase.
+    const shift = this.step.loop ? this.phase * clip.duration : 0;
+    const { frame, nextChangeAt } = frameAt(clip, now - this.startedAt + shift, this.step.loop);
+    let next = nextChangeAt === null ? null : this.startedAt - shift + nextChangeAt;
     // A one-shot followed by another step changes when it ends.
     if (!this.step.loop && next === null && this.queue.length > 0) {
       next = this.startedAt + clip.duration;

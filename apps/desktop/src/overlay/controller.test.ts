@@ -172,3 +172,38 @@ describe("AnimationController", () => {
     }
   });
 });
+
+describe("excursions", () => {
+  it("knows whether the buddy sits", () => {
+    const [c, t] = settled("working");
+    expect(c.posture(t)).toBe("sitting");
+    const [idle, t2] = settled("idle");
+    expect(idle.posture(t2)).toBe("standing");
+  });
+
+  it("sits down again after coming back from a walk", () => {
+    const [c, t] = settled("working");
+    c.restart(t);
+    expect(c.current(t).clip).toBe("sit_down");
+    expect(c.current(t + ms("sit_down")).clip).toBe("work_type");
+  });
+
+  it("an idle buddy just goes on idling", () => {
+    const [c, t] = settled("idle");
+    c.restart(t);
+    expect(c.current(t).clip).toBe("idle");
+  });
+});
+
+describe("phase", () => {
+  it("starts loops part-way in, and changes frames at the right times", () => {
+    const idle = atlas.clips.get("idle")!;
+    const half = new AnimationController("idle", 0, { clips: atlas.clips, reduceMotion: true, phase: 0.5 });
+    const zero = new AnimationController("idle", 0, { clips: atlas.clips, reduceMotion: true });
+    const t = ms("spawn");
+    const a = half.current(t + 10);
+    const b = zero.current(t + 10 + idle.duration / 2);
+    expect(a.frame).toBe(b.frame);
+    expect(a.nextChangeAt! - (t + 10)).toBe(b.nextChangeAt! - (t + 10 + idle.duration / 2));
+  });
+});
