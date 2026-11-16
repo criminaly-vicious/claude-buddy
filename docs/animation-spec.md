@@ -155,7 +155,11 @@ A very small tag over each buddy names its session, like a Minecraft name tag ov
 
 Implemented in `scene.ts` (where, and what it says) and `renderer.ts` (`drawTags`):
 - **Text:** the session's project, the folder name the balloon already shows. When another buddy has the same project, the newer one gets a number: "claude-buddy", "claude-buddy 2". A number stays with its buddy and is given again only once it is free. Nothing else from the session is shown.
-- **Look:** white text, 600 weight at 10 CSS px, on a dark see-through strip 13 CSS px tall with cut corners. It is drawn in device pixels, so it stays crisp at any DPI. It is at most one slot wide (a buddy and the gap); a longer name ends with "…".
+- **Look:** white text at 600 weight on a dark see-through strip with cut corners.
+  - It grows with the buddy size (`tagMetrics`): 9, 10 or 12 CSS px text on a strip 12, 13 or 16 CSS px tall, 2, 3 or 4 px over the head, at 1×, 2× or 3×.
+  - It is drawn in device pixels, so it stays crisp at any DPI.
+  - It is at most one slot wide (a buddy and the gap); a longer name ends with "…".
+  - Nothing about it moves on its own, so Reduce motion changes nothing.
 - **Place:** centred on the buddy, 3 CSS px over its head, or over the raised arms of the top mini on its stack. It follows the head frame by frame: breathing, sitting, hops, walks, strolls and visits.
 - **Hidden** while the buddy's own balloon (or one of its minis' balloons) is open, while it is held or in the air (walking back it has one again), on frames without a body (the puff of `leave`), and behind the `+N` chip.
 - It never takes the mouse: it has no hit region.

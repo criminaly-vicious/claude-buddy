@@ -33,9 +33,23 @@ export const SPRITE_SIZE = 32;
  * him stays click-through.
  */
 export const BODY_BOX = { x: 2, y: 10, width: 28, height: 21 };
-/** The name tag over a buddy (#87): its height and the gap under it, in CSS px. */
-export const TAG_HEIGHT = 13;
-const TAG_GAP = 3;
+/** How a name tag (#87) is drawn at a buddy size, in CSS px. */
+export interface TagMetrics {
+  /** Text size. */
+  font: number;
+  /** Height of the strip, and its gap over the head. */
+  height: number;
+  gap: number;
+  /** Space beside the text. */
+  pad: number;
+}
+
+/** Name tag sizes for buddies at 1×, 2× and 3× (settings), so a tag grows with its buddy. */
+export function tagMetrics(scale: number): TagMetrics {
+  if (scale < 1.5) return { font: 9, height: 12, gap: 2, pad: 3 };
+  if (scale < 2.5) return { font: 10, height: 13, gap: 3, pad: 4 };
+  return { font: 12, height: 16, gap: 4, pad: 5 };
+}
 /** A buddy's head at its highest (stretching), in sprite rows from its cell's top. */
 const HIGHEST_HEAD = 12;
 
@@ -47,7 +61,8 @@ const HIGHEST_HEAD = 12;
 export function roomAbove(minis: number, scale: number): number {
   const count = Math.min(minis, MAX_MINIS);
   const stack = count > 0 ? count * MINI_HEIGHT + 2 : 0;
-  return Math.max(0, Math.ceil((stack - HIGHEST_HEAD) * scale + TAG_GAP + TAG_HEIGHT));
+  const tag = tagMetrics(scale);
+  return Math.max(0, Math.ceil((stack - HIGHEST_HEAD) * scale + tag.gap + tag.height));
 }
 
 /** Gap between buddies and the waiting step, in sprite pixels (spec: 4 px). */
@@ -645,7 +660,7 @@ export class Scene {
         id,
         text: number === 1 ? base : `${base} ${number}`,
         x: x + (SPRITE_SIZE / 2) * pixel,
-        bottom: head - Math.round(TAG_GAP * css),
+        bottom: head - Math.round(tagMetrics(viewport.scale).gap * css),
       });
     };
 

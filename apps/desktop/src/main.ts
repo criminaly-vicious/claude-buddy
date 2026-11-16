@@ -31,7 +31,15 @@ import {
   TAIL_ROWS,
 } from "./overlay/renderer";
 import { CONTROLLER_CLIPS } from "./overlay/controller";
-import { BODY_BOX, DEFAULT_STROLLS, Scene, SPRITE_SIZE, StrollTiming, Viewport } from "./overlay/scene";
+import {
+  BODY_BOX,
+  DEFAULT_STROLLS,
+  Scene,
+  SPRITE_SIZE,
+  StrollTiming,
+  tagMetrics,
+  Viewport,
+} from "./overlay/scene";
 import { subscribeSessions } from "./overlay/sessions";
 
 /** Every animation the overlay plays; the atlas must have them all. */
@@ -222,6 +230,7 @@ async function start(): Promise<void> {
       ctx,
       frame.tags.filter((t) => t.id !== named),
       dpr,
+      tagMetrics(buddyScale),
       Math.max(30, (SPRITE_SIZE + SLOT_GAP) * buddyScale - 2),
     );
     const sprite =

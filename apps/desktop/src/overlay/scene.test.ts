@@ -11,7 +11,7 @@ import {
   Scene,
   SPRITE_SIZE,
   StrollTiming,
-  TAG_HEIGHT,
+  tagMetrics,
   Viewport,
 } from "./scene";
 
@@ -415,6 +415,23 @@ describe("Scene name tags", () => {
     ]);
   });
 
+  it("grows with the buddy size (1×, 2×, 3×)", () => {
+    const [small, medium, large] = [1, 2, 3].map(tagMetrics);
+    expect(small.font).toBeLessThan(medium.font);
+    expect(medium.font).toBeLessThan(large.font);
+    expect(small.height).toBeLessThan(large.height);
+    // The gap over the head follows the size too.
+    const at = (scale: number) => {
+      const scene = new Scene(atlas, { reduceMotion: true });
+      scene.setSessions([named("a", "app")], 0);
+      const frame = scene.render(settledAt, { ...viewport, scale });
+      const sprite = frame.sprites[0];
+      return sprite.y + sprite.frame.head! * frame.pixel - frame.tags[0].bottom;
+    };
+    expect(at(1)).toBe(tagMetrics(1).gap * viewport.devicePixelRatio);
+    expect(at(3)).toBe(tagMetrics(3).gap * viewport.devicePixelRatio);
+  });
+
   it("goes over the stack of minis", () => {
     const scene = new Scene(atlas, { reduceMotion: true });
     const subagents = ["s1", "s2"].map((id) => ({ id, since: 0 }));
@@ -444,9 +461,11 @@ describe("Scene name tags", () => {
   });
 
   it("keeps room for the tags and stacks; in top corners the group moves down to fit them", () => {
+    // No minis: at 2× and 3× the tag fits over Clawd's head, inside his cell.
     expect(roomAbove(0, 2)).toBe(0);
-    expect(roomAbove(0, 1)).toBe(4);
-    expect(roomAbove(2, 2)).toBe((2 * 9 + 2 - 12) * 2 + 3 + TAG_HEIGHT);
+    expect(roomAbove(0, 3)).toBe(0);
+    expect(roomAbove(0, 1)).toBe(tagMetrics(1).gap + tagMetrics(1).height - 12);
+    expect(roomAbove(2, 2)).toBe((2 * 9 + 2 - 12) * 2 + tagMetrics(2).gap + tagMetrics(2).height);
 
     const scene = new Scene(atlas, { reduceMotion: true });
     scene.setCorner("top-right");
@@ -456,7 +475,7 @@ describe("Scene name tags", () => {
     expect(frame.contentSize.height).toBe(36 * 2 + roomAbove(3, 2));
     // Everything over the buddy is inside the window.
     const tag = frame.tags[0];
-    expect(tag.bottom - TAG_HEIGHT * viewport.devicePixelRatio).toBeGreaterThanOrEqual(0);
+    expect(tag.bottom - tagMetrics(2).height * viewport.devicePixelRatio).toBeGreaterThanOrEqual(0);
     for (const s of frame.sprites.filter((s) => s.mini)) {
       expect(s.y + (s.frame.head! - 2) * frame.pixel).toBeGreaterThanOrEqual(tag.bottom);
     }
