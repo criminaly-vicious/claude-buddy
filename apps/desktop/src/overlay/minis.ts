@@ -120,12 +120,6 @@ export function parseMiniKey(key: string): { parent: string; id: string } | null
     : null;
 }
 
-/** Extra room above a buddy's 32 px cell for `count` minis on its head, in sprite px. */
-export function stackRise(count: number): number {
-  // From the buddy's highest head (stretching, row 12) up to raised mini arms.
-  return Math.max(0, Math.min(count, MAX_MINIS) * MINI_HEIGHT + 2 - 12);
-}
-
 export class MiniStack {
   private minis: Mini[] = [];
 

@@ -73,7 +73,7 @@ Implemented in `apps/desktop/src/overlay/layout.ts` and `scene.ts`:
 - **Order:** creation order, oldest touching the corner, mirrored for left and top corners; "forward" means away from the screen edge.
 - **Leaving:** when a buddy leaves, the ones behind it walk up one slot at 64 sprite px/s, facing the way they go (`walk_left` / `walk_right`). Positions are kept in sprite pixels along the floor, so resizing the window or changing DPI never makes anyone walk.
 - **Overflow:** the 10 oldest stay visible and the newest go behind the chip. Hovering the chip shows everyone; the group collapses 1.5 s after the pointer leaves it. Hidden buddies reappear in place, without walking.
-- **Window size:** the overlay window resizes around the group from its corner (`set_overlay_content_size`), instead of keeping a fixed size. It always keeps room for the hover balloon (280 × 62 CSS px plus its tail), so opening the balloon never resizes the window.
+- **Window size:** the overlay window resizes around the group from its corner (`set_overlay_content_size`), instead of keeping a fixed size. It always keeps room for the hover balloon (280 × 62 CSS px plus its tail), so opening the balloon never resizes the window. Above the group it keeps room for the name tags and the tallest stack of minis (`roomAbove`). In top corners, where the window grows downwards, the group moves down by that room so nothing over the buddies is cut off.
 - **Hit regions:** only Clawd's part of each 32×32 frame (28 × 21 sprite px, arms up included) takes the mouse, so the empty air above him stays click-through.
 
 ## Strolls
@@ -113,7 +113,7 @@ Implemented in `apps/desktop/src/overlay/minis.ts` (`MiniStack`, pure) and `scen
   - Hovering one opens a balloon about its subagent: what it does ("Running cargo"), then its type, the project and for how long ("general-purpose subagent · claude-buddy · 3s").
   - The buddy's own balloon goes over the whole stack.
   - A click on a mini focuses its session's terminal. A drag on a mini picks up its buddy.
-- **Window:** the overlay keeps room for the tallest stack above the group: 9 sprite px per mini beyond the first.
+- **Window:** the overlay keeps room for the tallest stack above the group, 9 sprite px per mini, and the name tag over it (see Layout).
 
 ## Sessions talking to each other
 
@@ -148,6 +148,17 @@ Implemented in `apps/desktop/src/overlay/throw.ts` (physics and phases, pure), `
 - **Physics:** fixed 120 Hz steps on a grid that starts at the grab, in CSS px relative to the group's corner area, separate from drawing. The path depends only on the input timestamps, not on the redraw rate. The render loop runs at frame rate only while someone is held, flying or walking back, and sleeps again after.
 - **Window:** on the first drag the backend expands the overlay to the work area (`overlay_expand` returns where the corner area sits inside it), so the group stays put on screen while the window grows; it is drawn in that area whenever the canvas has the expanded size. Everything outside the buddies stays click-through. When the last buddy is back in its slot, `overlay_restore` shrinks the window again. Until the expansion lands, a throw stays inside the corner area.
 - A buddy can be caught again in mid-air, or while it strolls or visits. The hover balloon does not open on a thrown buddy.
+
+## Name tags
+
+A very small tag over each buddy names its session, like a Minecraft name tag over a player (#87).
+
+Implemented in `scene.ts` (where, and what it says) and `renderer.ts` (`drawTags`):
+- **Text:** the session's project, the folder name the balloon already shows. When another buddy has the same project, the newer one gets a number: "claude-buddy", "claude-buddy 2". A number stays with its buddy and is given again only once it is free. Nothing else from the session is shown.
+- **Look:** white text, 600 weight at 10 CSS px, on a dark see-through strip 13 CSS px tall with cut corners. It is drawn in device pixels, so it stays crisp at any DPI. It is at most one slot wide (a buddy and the gap); a longer name ends with "…".
+- **Place:** centred on the buddy, 3 CSS px over its head, or over the raised arms of the top mini on its stack. It follows the head frame by frame: breathing, sitting, hops, walks, strolls and visits.
+- **Hidden** while the buddy's own balloon (or one of its minis' balloons) is open, while it is held or in the air (walking back it has one again), on frames without a body (the puff of `leave`), and behind the `+N` chip.
+- It never takes the mouse: it has no hit region.
 
 ## Hover card content rules
 

@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Subagents as mini Clawds.** Each subagent a session runs shows as a mini Clawd standing on its buddy's head, stacked in the order they started. Hover one to see what it is doing. Throw the buddy and the minis scatter, walk back and climb on again, always in the same order (#83, #84).
+- **Name tags.** A tiny tag over each buddy shows its session's project name, like a Minecraft name tag, so you can tell which buddy is which. Sessions in folders with the same name are numbered (#87).
 
 ### Changed
 

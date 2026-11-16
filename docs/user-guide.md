@@ -128,6 +128,10 @@ Full details: [animation spec](animation-spec.md).
 
 The overlay is click-through: clicks anywhere except on a buddy (or its hover balloon) go to the window underneath, so the buddies never get in your way.
 
+### Name tags
+
+A tiny tag over each buddy shows the name of its session's project folder, like a name tag over a player in Minecraft, so you can tell at a glance which buddy is which. When two sessions work in folders with the same name, the newer one gets a number: "claude-buddy" and "claude-buddy 2". The tag hides while the buddy's balloon is open, or while you hold or throw it.
+
 ### Hover balloon
 
 Rest the pointer on a buddy for about a third of a second and a speech balloon pops up above it, saying what it is doing:

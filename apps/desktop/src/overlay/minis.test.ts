@@ -12,7 +12,6 @@ import {
   miniKey,
   MiniStack,
   parseMiniKey,
-  stackRise,
 } from "./minis";
 import type { Bounds } from "./throw";
 
@@ -193,13 +192,6 @@ describe("MiniStack", () => {
       stack.update(2_300 + clips.poof.duration + 1, carrier({ home: false }));
       expect(stack.size).toBe(1);
     });
-  });
-
-  it("asks for room above the buddy only when the stack is taller than its cell", () => {
-    expect(stackRise(0)).toBe(0);
-    expect(stackRise(1)).toBe(0);
-    expect(stackRise(3)).toBe(3 * MINI_HEIGHT + 2 - 12);
-    expect(stackRise(99)).toBe(stackRise(MAX_MINIS));
   });
 
   it("names a mini by its buddy and its subagent", () => {

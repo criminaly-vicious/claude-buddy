@@ -26,11 +26,12 @@ import {
   BALLOON_MAX_WIDTH,
   drawBalloon,
   drawScene,
+  drawTags,
   measureBalloon,
   TAIL_ROWS,
 } from "./overlay/renderer";
 import { CONTROLLER_CLIPS } from "./overlay/controller";
-import { BODY_BOX, DEFAULT_STROLLS, Scene, StrollTiming, Viewport } from "./overlay/scene";
+import { BODY_BOX, DEFAULT_STROLLS, Scene, SPRITE_SIZE, StrollTiming, Viewport } from "./overlay/scene";
 import { subscribeSessions } from "./overlay/sessions";
 
 /** Every animation the overlay plays; the atlas must have them all. */
@@ -56,6 +57,8 @@ const OVERLAY_CLIPS = [
   "land_splat",
   "dizzy",
 ];
+/** The gap between buddies, in sprite px: name tags stay within a buddy and a half of it. */
+const SLOT_GAP = 4;
 /** The `+N` group collapses this long after the pointer leaves it. */
 const COLLAPSE_AFTER_MS = 1500;
 /** A press that moves further than this (CSS pixels) is a drag, not a click. */
@@ -213,6 +216,14 @@ async function start(): Promise<void> {
     let next = frame.nextChangeAt;
     cardRect = null;
     const openId = hover.openId(now);
+    // Name tags (#87), but not on a buddy whose balloon (or a mini's) is open: it names it.
+    const named = openId ? buddyOf(openId) : null;
+    drawTags(
+      ctx,
+      frame.tags.filter((t) => t.id !== named),
+      dpr,
+      Math.max(30, (SPRITE_SIZE + SLOT_GAP) * buddyScale - 2),
+    );
     const sprite =
       openId && !scene.isThrown(buddyOf(openId)) && frame.sprites.find((s) => s.id === openId);
     const mini = openId ? scene.miniView(openId) : undefined;
@@ -389,6 +400,14 @@ async function start(): Promise<void> {
       scene.setCorner(anchor.corner);
       loop.invalidate();
     });
+  }
+
+  // `pnpm dev:mock` has no backend to anchor it: `?corner=top-left` tries the others.
+  if (!inTauri) {
+    const corner = new URLSearchParams(location.search).get("corner");
+    if (corner === "top-left" || corner === "top-right" || corner === "bottom-left" || corner === "bottom-right") {
+      scene.setCorner(corner);
+    }
   }
 
   await subscribeSessions({
