@@ -11,7 +11,16 @@ import { Atlas, Clip, Frame, frameAt } from "../sprites/atlas";
 import type { SessionView, SubagentView } from "../types";
 import { AnimationController, ControllerOptions, phaseOf } from "./controller";
 import { Excursion, Room, Stroll, Visit } from "./excursion";
-import { Carrier, MINI_BOX, MiniClips, miniKey, MiniStack, parseMiniKey, stackRise } from "./minis";
+import {
+  Carrier,
+  MAX_MINIS,
+  MINI_BOX,
+  MINI_HEIGHT,
+  MiniClips,
+  miniKey,
+  MiniStack,
+  parseMiniKey,
+} from "./minis";
 import { FloorPosition, layout, toCanvas } from "./layout";
 import type { Corner, HitRegion } from "./native";
 import { Bounds, Point, Throw, ThrowClips } from "./throw";
@@ -24,6 +33,38 @@ export const SPRITE_SIZE = 32;
  * him stays click-through.
  */
 export const BODY_BOX = { x: 2, y: 10, width: 28, height: 21 };
+/** How a name tag (#87) is drawn at a buddy size, in CSS px. */
+export interface TagMetrics {
+  /** Text size. */
+  font: number;
+  /** Height of the strip, and its gap over the head. */
+  height: number;
+  gap: number;
+  /** Space beside the text. */
+  pad: number;
+}
+
+/** Name tag sizes for buddies at 1×, 2× and 3× (settings), so a tag grows with its buddy. */
+export function tagMetrics(scale: number): TagMetrics {
+  if (scale < 1.5) return { font: 9, height: 12, gap: 2, pad: 3 };
+  if (scale < 2.5) return { font: 10, height: 13, gap: 3, pad: 4 };
+  return { font: 12, height: 16, gap: 4, pad: 5 };
+}
+/** A buddy's head at its highest (stretching), in sprite rows from its cell's top. */
+const HIGHEST_HEAD = 12;
+
+/**
+ * Room above a buddy's 32 px cell, in CSS px, for `minis` mini Clawds on its
+ * head (with their arms up) and its name tag over them. `scale`: CSS px per
+ * sprite px.
+ */
+export function roomAbove(minis: number, scale: number): number {
+  const count = Math.min(minis, MAX_MINIS);
+  const stack = count > 0 ? count * MINI_HEIGHT + 2 : 0;
+  const tag = tagMetrics(scale);
+  return Math.max(0, Math.ceil((stack - HIGHEST_HEAD) * scale + tag.gap + tag.height));
+}
+
 /** Gap between buddies and the waiting step, in sprite pixels (spec: 4 px). */
 const GAP = 4;
 const STEP = 4;
@@ -117,6 +158,16 @@ export interface PlacedEffect {
   size: number;
 }
 
+/** A name tag (#87): which buddy, what it says, and where, in device px. */
+export interface PlacedTag {
+  id: string;
+  text: string;
+  /** Centre of the tag. */
+  x: number;
+  /** Its bottom edge, just over the buddy's head (or its stack of minis). */
+  bottom: number;
+}
+
 export interface PlacedChip {
   hidden: number;
   x: number;
@@ -127,6 +178,7 @@ export interface PlacedChip {
 export interface SceneFrame {
   sprites: PlacedSprite[];
   effects: PlacedEffect[];
+  tags: PlacedTag[];
   chip: PlacedChip | null;
   regions: HitRegion[];
   /** Space the group needs, in CSS pixels, so the window can fit it. */
@@ -162,6 +214,8 @@ interface Buddy {
   strollAt: number | null;
   /** Its subagents, as mini Clawds on its head (#84). */
   minis: MiniStack;
+  /** Its name tag (#87): the project, and a number when another buddy has the same one. */
+  tag: { base: string; number: number };
 }
 
 export { phaseOf };
@@ -460,6 +514,7 @@ export class Scene {
   update(view: SessionView, now: number): void {
     const existing = this.buddies.get(view.id);
     if (existing) {
+      if ((view.project || "session") !== existing.tag.base) existing.tag = this.tagFor(view);
       existing.view = view;
       existing.animation.setState(view.state, now);
       existing.minis.sync(view.subagents ?? [], now, this.flying(view.id));
@@ -480,8 +535,25 @@ export class Scene {
       hopAt: null,
       strollAt: null,
       minis: new MiniStack({ clips: this.miniClips, random: this.random }),
+      tag: this.tagFor(view),
     });
     this.buddies.get(view.id)?.minis.sync(view.subagents ?? [], now);
+  }
+
+  /**
+   * The name tag for `view`: its project, numbered when another buddy has
+   * the same one ("app", "app 2"). A number stays with its buddy and is
+   * given again only once it is free.
+   */
+  private tagFor(view: SessionView): { base: string; number: number } {
+    const base = view.project || "session";
+    const taken = new Set<number>();
+    for (const [id, buddy] of this.buddies) {
+      if (id !== view.id && buddy.tag.base.toLowerCase() === base.toLowerCase()) taken.add(buddy.tag.number);
+    }
+    let number = 1;
+    while (taken.has(number)) number++;
+    return { base, number };
   }
 
   /** Thrown and let go: in the air, landing or walking back. */
@@ -537,6 +609,13 @@ export class Scene {
       step: STEP,
       expanded: this.expanded,
     });
+    // Room over the group for the tallest stack of minis and the name tags.
+    // In top corners the window grows downwards, so the group moves down by it.
+    let room = 0;
+    for (const [id, buddy] of this.buddies) {
+      if (plan.buddies.has(id)) room = Math.max(room, roomAbove(buddy.minis.size, this.scaleCss));
+    }
+    const shift = this.corner.startsWith("top") ? Math.round(room * css) : 0;
     // Rounded: mid-walk offsets are fractional, and pixel art must stay on whole pixels.
     const place = (pos: FloorPosition) => {
       const at = toCanvas(
@@ -545,7 +624,7 @@ export class Scene {
         home,
         size,
       );
-      return { x: at.x + home.x, y: at.y + home.y };
+      return { x: at.x + home.x, y: at.y + home.y + shift };
     };
     const toHome = (p: Point): Point => ({ x: (p.x - home.x) / css, y: (p.y - home.y) / css });
     const toCanvasPoint = (p: Point): Point => ({
@@ -571,9 +650,25 @@ export class Scene {
       if (t !== null) nextChangeAt = nextChangeAt === null ? t : Math.min(nextChangeAt, t);
     };
 
-    const drawMinis = (id: string, buddy: Buddy, carrier: Carrier | null) => {
+    const tags: PlacedTag[] = [];
+    /** A tag over the buddy drawn at (`x`, `y`) with `frame`, or over its stack (`top`). */
+    const tagOver = (id: string, buddy: Buddy, x: number, y: number, frame: Frame, top: number | null) => {
+      if (frame.head === undefined) return;
+      const head = top ?? y + frame.head * pixel;
+      const { base, number } = buddy.tag;
+      tags.push({
+        id,
+        text: number === 1 ? base : `${base} ${number}`,
+        x: x + (SPRITE_SIZE / 2) * pixel,
+        bottom: head - Math.round(tagMetrics(viewport.scale).gap * css),
+      });
+    };
+
+    /** Draws a buddy's minis; returns the top of those standing on its head, if any. */
+    const drawMinis = (id: string, buddy: Buddy, carrier: Carrier | null): number | null => {
       const { placed, nextChangeAt: next } = buddy.minis.update(now, carrier);
       changeAt(next);
+      let top: number | null = null;
       for (const mini of placed) {
         const { x, y } = toCanvasPoint(mini.at);
         miniSprites.push({
@@ -586,7 +681,13 @@ export class Scene {
           mini: { parent: id, view: mini.view, stacked: mini.stacked },
         });
         regions.push(boxRegion(MINI_BOX, x, y));
+        if (mini.stacked) {
+          // Up to its raised arms.
+          const head = y + ((mini.frame.head ?? MINI_BOX.y + 2) - 2) * pixel;
+          top = top === null ? head : Math.min(top, head);
+        }
       }
+      return top;
     };
 
     // Slots first: visits walk to the slot of the buddy they visit.
@@ -622,7 +723,7 @@ export class Scene {
           this.placed.set(id, { x: shown.x, y: shown.y });
           this.pushEffects(id, x, y, size, now, effects, changeAt);
           // Held, the minis cling on; let go, they are already off.
-          drawMinis(id, buddy, {
+          const top = drawMinis(id, buddy, {
             at: toHome({ x, y }),
             frame: shown.frame,
             slot,
@@ -631,6 +732,10 @@ export class Scene {
             moving: true,
             scale: this.scaleCss,
           });
+          // No tag while held or in the air; walking back, it has one again.
+          if (!(away instanceof Thrown) || away.flight.phase === "returning") {
+            tagOver(id, buddy, x, y, shown.frame, top);
+          }
           changeAt(now + (away instanceof Thrown ? MOVE_FRAME_MS : WALK_FRAME_MS));
           continue;
         }
@@ -668,7 +773,7 @@ export class Scene {
       this.placed.set(id, toHome({ x, y }));
       regions.push(region(x, y));
       this.pushEffects(id, x, y + hop, size, now, effects, changeAt);
-      drawMinis(id, buddy, {
+      const top = drawMinis(id, buddy, {
         at: toHome({ x, y: y + hop }),
         frame,
         slot,
@@ -677,6 +782,7 @@ export class Scene {
         moving: walking,
         scale: this.scaleCss,
       });
+      tagOver(id, buddy, x, y + hop, frame, top);
     }
     sprites.push(...miniSprites);
 
@@ -689,19 +795,15 @@ export class Scene {
       regions.push(this.chipRegion);
     }
 
-    // Room above the group for the tallest stack of minis.
-    let rise = 0;
-    for (const [id, buddy] of this.buddies) {
-      if (plan.buddies.has(id)) rise = Math.max(rise, stackRise(buddy.minis.size));
-    }
     return {
       sprites,
       effects,
+      tags,
       chip,
       regions,
       contentSize: {
         width: plan.extent.along * viewport.scale,
-        height: (plan.extent.across + rise) * viewport.scale,
+        height: plan.extent.across * viewport.scale + room,
       },
       nextChangeAt,
       pixel,

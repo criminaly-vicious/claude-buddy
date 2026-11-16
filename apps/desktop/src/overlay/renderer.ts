@@ -1,6 +1,6 @@
 import type { BuddyState } from "../types";
 import type { Rect } from "./hoverCard";
-import type { PlacedChip, SceneFrame } from "./scene";
+import type { PlacedChip, PlacedTag, SceneFrame, TagMetrics } from "./scene";
 
 /** Draws one scene frame: nearest-neighbour, whole device pixels only. */
 export function drawScene(
@@ -33,6 +33,40 @@ function drawChip(ctx: CanvasRenderingContext2D, chip: PlacedChip): void {
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillText(`+${hidden}`, x + size / 2, y + size / 2);
+}
+
+/**
+ * Draws the name tags over the buddies, like a Minecraft name tag: small
+ * white text on a dark see-through strip with cut corners, sized by
+ * `metrics` (the buddy size). A name wider than `maxWidth` (CSS px) ends
+ * with "…".
+ */
+export function drawTags(
+  ctx: CanvasRenderingContext2D,
+  tags: readonly PlacedTag[],
+  dpr: number,
+  metrics: TagMetrics,
+  maxWidth: number,
+): void {
+  if (tags.length === 0) return;
+  ctx.font = `600 ${metrics.font * dpr}px system-ui, "Segoe UI", sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  const height = Math.round(metrics.height * dpr);
+  const pad = Math.round(metrics.pad * dpr);
+  const corner = Math.max(1, Math.round(dpr));
+  for (const tag of tags) {
+    const text = fit(ctx, tag.text, maxWidth * dpr - 2 * pad);
+    const width = Math.ceil(ctx.measureText(text).width) + 2 * pad;
+    const x = Math.round(tag.x - width / 2);
+    const y = tag.bottom - height;
+    ctx.fillStyle = "rgba(24, 18, 16, 0.6)";
+    ctx.fillRect(x + corner, y, width - 2 * corner, height);
+    ctx.fillRect(x, y + corner, corner, height - 2 * corner);
+    ctx.fillRect(x + width - corner, y + corner, corner, height - 2 * corner);
+    ctx.fillStyle = "#FFFFFF";
+    ctx.fillText(text, x + width / 2, y + height / 2 + Math.round(dpr / 2));
+  }
 }
 
 /** Balloon text style and size limits, in CSS pixels. */

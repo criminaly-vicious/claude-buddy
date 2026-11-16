@@ -4,7 +4,16 @@ import { parseAtlas } from "../sprites/atlas";
 import buddy from "../sprites/buddy/atlas.json";
 import type { BuddyState, SessionView } from "../types";
 import { HitRegionSync } from "./hitSync";
-import { BODY_BOX, HOP_MS, Scene, SPRITE_SIZE, StrollTiming, Viewport } from "./scene";
+import {
+  BODY_BOX,
+  HOP_MS,
+  roomAbove,
+  Scene,
+  SPRITE_SIZE,
+  StrollTiming,
+  tagMetrics,
+  Viewport,
+} from "./scene";
 
 const atlas = parseAtlas(buddy);
 const viewport: Viewport = { width: 960, height: 320, devicePixelRatio: 2, scale: 2 };
@@ -365,6 +374,110 @@ describe("Scene redraws", () => {
       expect(wakeups.filter((t) => Math.abs(t / 125 - Math.round(t / 125)) > 1e-6)).toEqual([]);
       // ...so there are at most 8 a second, the same for 1 buddy as for 10.
       expect(wakeups.length / 60).toBeLessThanOrEqual(8);
+    }
+  });
+});
+
+describe("Scene name tags", () => {
+  const settledAt = 1_000;
+  const named = (id: string, project: string, state: BuddyState = "idle"): SessionView => ({
+    ...view(id, state),
+    project,
+  });
+  const texts = (scene: Scene, now: number) =>
+    scene.render(now, viewport).tags.map((t) => [t.id, t.text]);
+
+  it("names each buddy over its head; a shared name gets a number", () => {
+    const scene = new Scene(atlas, { reduceMotion: true });
+    scene.setSessions([named("a", "app"), named("b", "app"), named("c", "web")], 0);
+    const frame = scene.render(settledAt, viewport);
+    expect(frame.tags.map((t) => [t.id, t.text])).toEqual([
+      ["a", "app"],
+      ["b", "app 2"],
+      ["c", "web"],
+    ]);
+    for (const tag of frame.tags) {
+      const sprite = frame.sprites.find((s) => s.id === tag.id)!;
+      expect(tag.x).toBe(sprite.x + (SPRITE_SIZE / 2) * frame.pixel);
+      expect(tag.bottom).toBeLessThan(sprite.y + sprite.frame.head! * frame.pixel);
+    }
+  });
+
+  it("a number stays with its buddy, and is given again once it is free", () => {
+    const scene = new Scene(atlas, { reduceMotion: true });
+    scene.setSessions([named("a", "app"), named("b", "app")], 0);
+    scene.remove("a", settledAt);
+    expect(texts(scene, settledAt)).toEqual([["b", "app 2"]]);
+    scene.update(named("c", "app"), settledAt);
+    expect(texts(scene, settledAt + 2_000)).toEqual([
+      ["b", "app 2"],
+      ["c", "app"],
+    ]);
+  });
+
+  it("grows with the buddy size (1×, 2×, 3×)", () => {
+    const [small, medium, large] = [1, 2, 3].map(tagMetrics);
+    expect(small.font).toBeLessThan(medium.font);
+    expect(medium.font).toBeLessThan(large.font);
+    expect(small.height).toBeLessThan(large.height);
+    // The gap over the head follows the size too.
+    const at = (scale: number) => {
+      const scene = new Scene(atlas, { reduceMotion: true });
+      scene.setSessions([named("a", "app")], 0);
+      const frame = scene.render(settledAt, { ...viewport, scale });
+      const sprite = frame.sprites[0];
+      return sprite.y + sprite.frame.head! * frame.pixel - frame.tags[0].bottom;
+    };
+    expect(at(1)).toBe(tagMetrics(1).gap * viewport.devicePixelRatio);
+    expect(at(3)).toBe(tagMetrics(3).gap * viewport.devicePixelRatio);
+  });
+
+  it("goes over the stack of minis", () => {
+    const scene = new Scene(atlas, { reduceMotion: true });
+    const subagents = ["s1", "s2"].map((id) => ({ id, since: 0 }));
+    scene.setSessions([{ ...named("a", "app", "working"), subagents }], 0);
+    const frame = scene.render(settledAt, viewport);
+    const top = Math.min(...frame.sprites.filter((s) => s.mini).map((s) => s.y + s.frame.head! * frame.pixel));
+    expect(frame.tags[0].bottom).toBeLessThan(top);
+  });
+
+  it("no tag while held or in the air; walking back, it has one again", () => {
+    const scene = new Scene(atlas, { reduceMotion: true });
+    scene.setSessions([named("a", "app")], 0);
+    scene.render(settledAt, viewport);
+    scene.setWorkArea({ left: -2000, top: -1000, right: 960, bottom: 320 });
+    const a = scene.render(settledAt, viewport).sprites[0];
+    scene.grab("a", { x: a.x / 2 + 30, y: a.y / 2 + 40 }, settledAt);
+    expect(scene.render(settledAt + 20, viewport).tags).toEqual([]);
+    scene.drag({ x: a.x / 2 - 300, y: a.y / 2 - 100 }, settledAt + 40);
+    scene.release(settledAt + 50);
+    expect(scene.render(settledAt + 100, viewport).tags).toEqual([]);
+    let now = settledAt + 100;
+    let tagged = false;
+    for (; now < settledAt + 20_000 && scene.busy; now += 40) {
+      tagged ||= scene.render(now, viewport).tags.length === 1;
+    }
+    expect(tagged).toBe(true);
+  });
+
+  it("keeps room for the tags and stacks; in top corners the group moves down to fit them", () => {
+    // No minis: at 2× and 3× the tag fits over Clawd's head, inside his cell.
+    expect(roomAbove(0, 2)).toBe(0);
+    expect(roomAbove(0, 3)).toBe(0);
+    expect(roomAbove(0, 1)).toBe(tagMetrics(1).gap + tagMetrics(1).height - 12);
+    expect(roomAbove(2, 2)).toBe((2 * 9 + 2 - 12) * 2 + tagMetrics(2).gap + tagMetrics(2).height);
+
+    const scene = new Scene(atlas, { reduceMotion: true });
+    scene.setCorner("top-right");
+    const subagents = ["s1", "s2", "s3"].map((id) => ({ id, since: 0 }));
+    scene.setSessions([{ ...named("a", "app", "working"), subagents }], 0);
+    const frame = scene.render(settledAt, viewport);
+    expect(frame.contentSize.height).toBe(36 * 2 + roomAbove(3, 2));
+    // Everything over the buddy is inside the window.
+    const tag = frame.tags[0];
+    expect(tag.bottom - tagMetrics(2).height * viewport.devicePixelRatio).toBeGreaterThanOrEqual(0);
+    for (const s of frame.sprites.filter((s) => s.mini)) {
+      expect(s.y + (s.frame.head! - 2) * frame.pixel).toBeGreaterThanOrEqual(tag.bottom);
     }
   });
 });
