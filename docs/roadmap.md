@@ -22,4 +22,4 @@ M1 and M2 run in parallel: the overlay develops against a mock session feed (`pn
 
 ## After v1.0.0 (ideas, not committed)
 
-Per-project colours and names, desktop notification when a buddy waits, opt-in sounds, helper buddies for subagents, buddy-to-buddy interactions, macOS/Linux ports.
+Per-project colours and names, desktop notification when a buddy waits, opt-in sounds, macOS/Linux ports. Done: buddy-to-buddy chats (#78, in 1.0.0) and subagents as mini Clawds stacked on their buddy (#84).

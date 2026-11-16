@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Subagents as mini Clawds.** Each subagent a session runs shows as a mini Clawd standing on its buddy's head, stacked in the order they started. Hover one to see what it is doing. Throw the buddy and the minis scatter, walk back and climb on again, always in the same order (#83, #84).
+
+### Changed
+
+- **Walking in three-quarter view.** Clawd turns towards where he walks, half front and half side, when he walks back after a throw, closes a gap, strolls or visits (#85).
+- **Hooks follow subagents.** Claude Buddy now listens to two more Claude Code events, `SubagentStart` and `SubagentStop`. With the classic hooks, run **Install / repair hooks…** from the tray menu once; the settings window says when they are out of date. The mod updates with the plugin (#83).
+- A subagent's tools now show on its mini Clawd; its session's buddy keeps showing that it is delegating (#83).
+
 ## [1.0.0] - 2026-11-13
 
 First release: an animated buddy in the corner of your screen for every Claude Code CLI session running on Windows.

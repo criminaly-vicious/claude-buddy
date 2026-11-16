@@ -27,6 +27,9 @@ describe("settings text", () => {
     expect(hookStatusText(base)).toEqual({ text: "Hooks are installed.", ok: true });
     expect(hookStatusText({ ...base, installed: false }).ok).toBe(false);
     expect(hookStatusText({ ...base, installed: null }).text).toContain("Could not read");
+    const old = hookStatusText({ ...base, installed: false, outdated: true });
+    expect(old.ok).toBe(false);
+    expect(old.text).toContain("out of date");
     expect(hookStatusText({ ...base, bridgeRunning: false }).text).toContain("not running");
   });
 });

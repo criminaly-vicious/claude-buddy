@@ -42,6 +42,16 @@ const EXTRA_SPREAD_MS = 12_000;
 
 export type Posture = "standing" | "sitting";
 
+/** A stable 0..1 number for an id: its buddy's (or mini's) place in its animation loops. */
+export function phaseOf(id: string): number {
+  let hash = 2166136261;
+  for (let i = 0; i < id.length; i++) {
+    hash ^= id.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0) / 4294967296;
+}
+
 /**
  * The grid a clip's frame changes fall on: the longest time that every
  * frame lasts a whole number of (125 ms for the clips a resting buddy

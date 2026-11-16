@@ -15,8 +15,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::{json, Map, Value};
 
 /// Hook events the bridge maps (docs/architecture.md#server-event--registry).
-/// `SubagentStart`/`SubagentStop` are left out: the MVP ignores them, so
-/// registering them would only spawn processes for nothing.
 pub const EVENTS: &[&str] = &[
     "SessionStart",
     "UserPromptSubmit",
@@ -26,6 +24,8 @@ pub const EVENTS: &[&str] = &[
     "Notification",
     "PermissionRequest",
     "Stop",
+    "SubagentStart",
+    "SubagentStop",
     "SessionEnd",
 ];
 
@@ -148,6 +148,12 @@ impl HookInstaller {
     pub fn is_installed(&self) -> Result<bool, InstallError> {
         let plan = self.plan_install()?;
         Ok(!plan.changes_anything() && !plan.before.is_empty())
+    }
+
+    /// Whether any Claude Buddy hook is in the file, current or not. When
+    /// [`HookInstaller::is_installed`] is false, those hooks are out of date.
+    pub fn has_our_hooks(&self) -> Result<bool, InstallError> {
+        Ok(self.plan_uninstall()?.changes_anything())
     }
 
     pub fn plan_install(&self) -> Result<Plan, InstallError> {

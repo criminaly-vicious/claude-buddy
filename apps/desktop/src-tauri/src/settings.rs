@@ -255,6 +255,8 @@ pub fn list_monitors(app: AppHandle) -> Result<Vec<MonitorInfo>, String> {
 pub struct HookStatus {
     /// `None` when it could not be checked (no config folder, unreadable file).
     pub installed: Option<bool>,
+    /// Some of our hooks are there but not all: an older install.
+    pub outdated: bool,
     pub settings_path: Option<String>,
     /// Epoch ms of the last hook event since Claude Buddy started.
     pub last_event_at: Option<Millis>,
@@ -264,9 +266,12 @@ pub struct HookStatus {
 #[tauri::command]
 pub fn hook_status(app: AppHandle) -> HookStatus {
     let actions = crate::tray::hook_actions().ok();
-    let installed = actions
+    let installer = actions
         .as_ref()
-        .and_then(|a| HookInstaller::new(&a.settings, &a.hook).is_installed().ok());
+        .map(|a| HookInstaller::new(&a.settings, &a.hook));
+    let installed = installer.as_ref().and_then(|i| i.is_installed().ok());
+    let outdated =
+        installed == Some(false) && installer.is_some_and(|i| i.has_our_hooks().unwrap_or(false));
     let last_event_at = app
         .try_state::<Arc<Mutex<Registry>>>()
         .and_then(|r| lock(&r).last_hook_event_at());
@@ -275,6 +280,7 @@ pub fn hook_status(app: AppHandle) -> HookStatus {
         .is_some_and(|b| lock(&b).is_some());
     HookStatus {
         installed,
+        outdated,
         settings_path: actions.map(|a| a.settings.display().to_string()),
         last_event_at,
         bridge_running,

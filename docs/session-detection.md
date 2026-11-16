@@ -12,7 +12,7 @@ The preferred way to deliver the hook events below ([ADR-0014](../.context/decis
 /plugin install buddy-bridge --marketplace criminaly-vicious/claude-buddy
 ```
 
-- **Events.** It hooks the same nine events the tray installer registers, as `classic.<Event>`, and sends the same wire events as `buddy-hook` to `POST /v1/events` ([protocol](architecture.md#bridge-protocol)). `classic.PreToolUse` delivers the tool call's envelope (`tool`, `tool_use_id`, the arguments) instead of the stdin payload, so the mod rebuilds `tool_name`/`tool_input` from it and reads `session_id` and `cwd` from `$.session`.
+- **Events.** It hooks the same eleven events the tray installer registers, as `classic.<Event>`, and sends the same wire events as `buddy-hook` to `POST /v1/events` ([protocol](architecture.md#bridge-protocol)). `classic.PreToolUse` delivers the tool call's envelope (`tool`, `tool_use_id`, the arguments) instead of the stdin payload, so the mod rebuilds `tool_name`/`tool_input` from it and reads `session_id` and `cwd` from `$.session`.
 - **Same rules.** Fields, limits, privacy and the `target` rules are those of `buddy-hook`, in `hooks/protocol.ts`. The cases in `mods/buddy-bridge/test/target-cases.js` are tested against both this file and `bridge_protocol::target::derive`.
 - **Never blocks.** Each hook returns `next(e)` at once and reports on the side, with a `.catch` that hands the event on if it ever fails. `bridge.json` is read through `$.fs` (cached 5 s, re-read after a refused token or a send that got no answer), the send goes through `$.http.fetch` and is given up after 300 ms, and every error is swallowed.
 - **No double reporting.** If any settings layer has a hook running `buddy-hook(.exe)` (`$.settings.read({ key: "hooks" })`), the mod stays quiet for that session and the classic hook reports. Remove the classic hooks (tray → **Uninstall hooks…**) to hand over to the mod from the next session.
@@ -62,7 +62,7 @@ Implemented in `apps/desktop/src-tauri/src/installer/` (`HookInstaller`: `plan_i
 - Invalid `settings.json`: nothing is written and the error is shown.
 
 - **File:** `<config>/settings.json`, where `<config>` is `CLAUDE_CONFIG_DIR` if set, else `~/.claude` (Windows: `%USERPROFILE%\.claude`). A missing file is created; a blank file counts as `{}`.
-- **Events:** `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `Notification`, `PermissionRequest`, `Stop`, `SessionEnd`: the events the bridge maps. `SubagentStart`/`SubagentStop` are not registered while the MVP ignores them.
+- **Events:** `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `Notification`, `PermissionRequest`, `Stop`, `SubagentStart`, `SubagentStop`, `SessionEnd`: the events the bridge maps. Installs from before subagents were followed lack the two `Subagent*` events. The settings window then says the hooks are out of date, and **Install / repair hooks…** adds them.
 - **Ours vs theirs:** a hook is ours when its `command` file name is `buddy-hook.exe` or `buddy-hook` (any folder, any case). Install removes all of ours, then appends one group `{"hooks": [<ours>]}` per event, so an older install at another path is upgraded and nothing is duplicated. Other tools' hooks, matchers and groups are never touched; a group shared with another tool keeps the other hook.
 - **No needless writes:** if the hooks are already exactly right, install changes nothing, makes no backup and keeps the file's exact bytes.
 - **Safety:** a symlinked `settings.json` (dotfile setups) is written through: the real file is backed up and replaced, and the link stays a link. Before every write, the old file is copied to `settings.json.claude-buddy-backup-<epoch ms>` next to it; only the 5 newest backups are kept. The new file is written to a temporary file and renamed into place, keeping the original permissions. Key order is preserved (`serde_json` `preserve_order`), output uses two-space indentation like Claude Code.
@@ -100,11 +100,11 @@ Per event (fields beyond the common ones):
 | `Notification` | `message`, `title`, `notification_type` | `permission_prompt`, `idle_prompt`, `elicitation_dialog`, `elicitation_url_dialog`, `agent_needs_input` → `waiting`; other types ignored | [docs](../tests/fixtures/hooks/from-docs/notification-permission-prompt.json) |
 | `PermissionRequest` | `tool_name`, `tool_input`, `permission_suggestions` (no `tool_use_id`) | Earliest "asks for permission" signal → `waiting`. Optional, `Notification` covers it | [docs](../tests/fixtures/hooks/from-docs/permission-request-bash.json) |
 | `Stop` | `stop_hook_active`, `last_assistant_message` (**never forward**), `background_tasks`, `session_crons` | Turn finished → `idle` | [captured](../tests/fixtures/hooks/captured/stop.json) |
-| `SubagentStart` | `agent_id`, `agent_type` | Post-MVP: helper buddy appears | [captured](../tests/fixtures/hooks/captured/subagent-start.json) |
-| `SubagentStop` | as `Stop`, plus `agent_id`, `agent_type`, `agent_transcript_path` | Post-MVP: helper buddy leaves | [captured](../tests/fixtures/hooks/captured/subagent-stop.json) |
+| `SubagentStart` | `agent_id`, `agent_type` | A mini Clawd appears on the session's buddy ([Subagents](#subagents)) | [captured](../tests/fixtures/hooks/captured/subagent-start.json) |
+| `SubagentStop` | as `Stop`, plus `agent_id`, `agent_type`, `agent_transcript_path` (`last_assistant_message`: **never forward**) | Its mini Clawd leaves | [captured](../tests/fixtures/hooks/captured/subagent-stop.json) |
 | `SessionEnd` | `reason`: `clear`, `resume`, `logout`, `prompt_input_exit`, `other` | `leaving`, then remove | [captured](../tests/fixtures/hooks/captured/session-end.json) |
 
-Tool events fired inside a subagent carry `agent_id`/`agent_type` ([sample](../tests/fixtures/hooks/captured/pre-tool-use-read-in-subagent.json)). For the MVP they count toward the parent buddy's state.
+Tool events fired inside a subagent carry `agent_id`/`agent_type` ([sample](../tests/fixtures/hooks/captured/pre-tool-use-read-in-subagent.json)). They update that subagent's mini Clawd, not the parent buddy ([Subagents](#subagents)). `agent_type` without `agent_id` comes from the main thread of a session started with `--agent`, which is not a subagent.
 
 Not captured: `Notification` and `PermissionRequest` only fire in interactive sessions, and the capture ran with `claude -p`. Their samples come from the docs.
 
@@ -225,6 +225,23 @@ The mapping lives in one table in the registry so it is easy to tune.
 - `waiting` has priority: it is only left on a new tool/prompt event or `Stop`.
 - `waiting` and `leaving` skip the minimum display time: the user must see them at once. A state queued behind the minimum is replaced by any newer one, so only the latest is shown.
 - Implemented in `apps/desktop/src-tauri/src/registry/` as pure logic: the caller passes the time in, `Registry::apply` takes a normalised event, `Registry::tick` runs the timers, and `Registry::next_deadline` says when the next tick is due, so nothing polls.
+
+## Subagents
+
+Each running subagent shows as a mini Clawd standing on its session's buddy (docs/animation-spec.md#subagents). Decision record: [ADR-0015](../.context/decisions/0015-subagents-from-hooks.md).
+
+- **Source:** hooks only. `SubagentStart` and `SubagentStop` carry the subagent's `agent_id` and `agent_type`, and so do the tool events fired inside it. Transcript-only sessions show no subagents, since the watcher skips `subagents/`.
+- **Registry** (`Session::track_subagent`):
+  - A session keeps its running subagents in start order, as `SessionView.subagents`: id, type (`kind`), current tool and summary, and since when.
+  - A subagent starts on `SubagentStart`, or on its first event with an `agent_id`, so hooks that miss the start still show it. It ends on `SubagentStop`.
+  - If no end comes (an interrupted turn, the app restarting), it is dropped after **10 min** without events. A subagent known only from its tools (older hooks, with no `SubagentStop` to come) is dropped after **90 s** of silence. These deadlines are part of `Registry::next_deadline`.
+  - At most 16 are tracked per session. The session leaving takes them all.
+- **The parent buddy:**
+  - A subagent's tool events update that subagent only. The parent keeps the tool and pose of its own `Agent` call ("Delegating to Explore") and is not set to researching by a subagent that reads.
+  - A permission prompt inside a subagent still makes the parent wait, because the user answers in that terminal. The subagent's next tool means the user answered.
+  - Subagent events keep the parent awake.
+- **Background subagents** keep running after the parent's turn ends: the parent goes idle and its minis stay until they stop.
+- **Never sent:** the subagent's prompt, its last message (`last_assistant_message`) and its transcript paths. Only the id, the type and the usual tool `target` travel.
 
 ## Sessions talking to each other
 

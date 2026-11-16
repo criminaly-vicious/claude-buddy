@@ -126,7 +126,9 @@ export interface ThrowClips {
   land: Clip;
   land_splat: Clip;
   dizzy: Clip;
-  walk: Clip;
+  /** The walk back, in three-quarter view towards each side (#85). */
+  walkLeft: Clip;
+  walkRight: Clip;
 }
 
 export interface ThrowOptions {
@@ -198,6 +200,19 @@ export class Throw {
     this.simulate(now);
     this.body = capSpeed(this.body);
     this.enter("flying", this.simAt);
+  }
+
+  /** Sends it flying from where it is with `velocity` (px/s), without a grab. */
+  fling(velocity: { vx: number; vy: number }, now: number): void {
+    if (this.phaseName !== "grabbed") return;
+    this.simAt = now;
+    this.body = capSpeed({ ...this.body, vx: velocity.vx, vy: velocity.vy });
+    this.enter("flying", now);
+  }
+
+  /** Its velocity now, px/s (at a release: the speed it was thrown with). */
+  get velocity(): { vx: number; vy: number } {
+    return { vx: this.body.vx, vy: this.body.vy };
   }
 
   /** Where the buddy is and what it shows at `now`; `slot` is where it walks back to. */
@@ -290,8 +305,12 @@ export class Throw {
         return frameAt(last, last.duration, false).frame;
       }
       case "returning":
-      case "done":
-        return frameAt(clips.walk, t, true).frame;
+      case "done": {
+        // Facing the way it walks; straight up or down, towards the slot's side.
+        const walk = this.walk;
+        const dx = walk ? walk.to.x - walk.from.x : 0;
+        return frameAt(dx < 0 ? clips.walkLeft : clips.walkRight, t, true).frame;
+      }
     }
   }
 }

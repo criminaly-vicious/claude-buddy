@@ -23,6 +23,7 @@ Claude Buddy is a lightweight Windows tray app that gives each running **Claude 
 - **Hover** a buddy for a speech balloon saying what it is doing ("Editing app.ts", "Waiting for you"), its project and for how long.
 - **Strolls:** now and then an idle buddy wanders off along the floor, looks around and walks back.
 - **Sessions talking:** when one session messages another, its buddy walks over to the other's and they chat for a moment.
+- **Subagents as mini Clawds:** each subagent a session runs stands on its buddy's head, stacked in order. Throw the buddy and they scatter, then walk back and climb on again in the same order.
 - **Click** it to bring its terminal window to the front.
 - **Grab and throw** it: it bounces off the screen edges and walks back to its place.
 - **Tray app** with settings (corner, monitor, size, sleep time, reduce motion: no strolls or walk-overs), start with Windows and a show/hide hotkey (`Ctrl+Alt+B`).

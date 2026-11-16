@@ -10,6 +10,7 @@ import {
   HOVER_DELAY_MS,
   HoverState,
   MAX_LINE_CHARS,
+  miniBalloonLines,
   placeCard,
 } from "./hoverCard";
 
@@ -102,6 +103,25 @@ describe("balloonLines", () => {
   it("what it does, then project, state and time", () => {
     const lines = balloonLines({ ...base, tool: "Edit", summary: "Edit · src/app.ts" }, 134_000);
     expect(lines).toEqual(["Editing src/app.ts", "claude-buddy · Working 2m 14s"]);
+  });
+
+  it("counts the subagents working for it", () => {
+    const sub = (id: string) => ({ id, since: 0 });
+    expect(balloonLines({ ...base, subagents: [sub("a")] }, 0)[2]).toBe("1 subagent working");
+    expect(balloonLines({ ...base, subagents: [sub("a"), sub("b")] }, 0)[2]).toBe("2 subagents working");
+  });
+
+  it("over a mini: what its subagent does, its type and for how long", () => {
+    const lines = miniBalloonLines(
+      { id: "s1", kind: "Explore", tool: "Grep", summary: "Grep · fn main", since: 0 },
+      base,
+      14_000,
+    );
+    expect(lines).toEqual(["Searching for fn main", "Explore subagent · claude-buddy · 14s"]);
+    expect(miniBalloonLines({ id: "s1", since: 0 }, base, 0)).toEqual([
+      "Thinking",
+      "Subagent · claude-buddy · 0s",
+    ]);
   });
 
   it("marks transcript-only sessions as approximate", () => {

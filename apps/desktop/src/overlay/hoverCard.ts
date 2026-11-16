@@ -8,7 +8,7 @@
  * tested without a canvas.
  */
 
-import type { BuddyState, SessionView } from "../types";
+import type { BuddyState, SessionView, SubagentView } from "../types";
 import type { Corner } from "./native";
 
 export const HOVER_DELAY_MS = 300;
@@ -61,8 +61,7 @@ export function formatElapsed(ms: number): string {
 }
 
 /** The target in a backend summary (`"Edit · app.ts"` → `"app.ts"`), if any. */
-function targetOf(view: SessionView): string | undefined {
-  const { tool, summary } = view;
+function targetOf({ tool, summary }: { tool?: string; summary?: string }): string | undefined {
   if (!tool || !summary) return undefined;
   const prefix = `${tool} · `;
   return summary.startsWith(prefix) ? summary.slice(prefix.length) : undefined;
@@ -124,7 +123,18 @@ export function balloonLines(view: SessionView, now: number): string[] {
     `${view.project || "session"} · ${STATE_LABELS[view.state]} ${formatElapsed(now - view.since)}`,
   ];
   if (view.source === "transcript") lines.push(APPROXIMATE_HINT);
+  const helpers = view.subagents?.length ?? 0;
+  if (helpers > 0) lines.push(`${helpers} ${helpers === 1 ? "subagent" : "subagents"} working`);
   return lines.slice(0, MAX_LINES).map((line) => clip(line));
+}
+
+/** The balloon over a mini Clawd: what its subagent does, its type and for how long. */
+export function miniBalloonLines(subagent: SubagentView, parent: SessionView, now: number): string[] {
+  const doing = subagent.tool ? describeTool(subagent.tool, targetOf(subagent)) : "Thinking";
+  const who = subagent.kind ? `${subagent.kind} subagent` : "Subagent";
+  return [doing, `${who} · ${parent.project || "session"} · ${formatElapsed(now - subagent.since)}`].map(
+    (line) => clip(line),
+  );
 }
 
 /**

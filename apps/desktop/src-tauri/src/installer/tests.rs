@@ -67,7 +67,7 @@ fn installs_every_event_in_exec_async_form() {
             "{event}"
         );
     }
-    assert!(json["hooks"].get("SubagentStart").is_none());
+    assert!(json["hooks"].get("PreCompact").is_none());
     assert!(installer.is_installed().unwrap());
     let _ = fs::remove_dir_all(dir);
 }
@@ -152,6 +152,10 @@ fn install_is_idempotent_and_keeps_bytes_when_nothing_changes() {
 fn upgrades_an_old_install_and_keeps_shared_groups() {
     let (installer, dir) = settings("old", Some(&fixture("old-buddy.json")));
     assert!(!installer.is_installed().unwrap());
+    assert!(
+        installer.has_our_hooks().unwrap(),
+        "out of date, not missing"
+    );
     installer.install().unwrap();
     let json = read_json(&dir.join("settings.json"));
 
@@ -163,8 +167,11 @@ fn upgrades_an_old_install_and_keeps_shared_groups() {
         json["hooks"]["PreToolUse"][0]["hooks"],
         json!([{"type": "command", "command": "/home/user/bin/audit-bash.sh"}])
     );
+    // An old entry for an event we register again is replaced too.
+    assert_eq!(ours(&json, "SubagentStart").len(), 1);
+    assert_eq!(ours(&json, "SubagentStart")[0]["command"], HOOK);
     // An event we no longer register is cleaned up.
-    assert!(json["hooks"].get("SubagentStart").is_none());
+    assert!(json["hooks"].get("PreCompact").is_none());
     assert_eq!(json["theme"], "dark");
     let _ = fs::remove_dir_all(dir);
 }

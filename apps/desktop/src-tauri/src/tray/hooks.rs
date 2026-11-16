@@ -221,7 +221,7 @@ mod tests {
                 true
             })
             .unwrap();
-        assert!(shown.contains("9 Claude Code events"), "{shown}");
+        assert!(shown.contains("11 Claude Code events"), "{shown}");
         assert!(shown.contains("backup"), "{shown}");
         assert!(
             !shown.contains("hunter2"),

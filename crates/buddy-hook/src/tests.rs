@@ -25,6 +25,7 @@ const ALLOWED_KEYS: &[&str] = &[
     "notification_type",
     "start_source",
     "agent_id",
+    "agent_type",
 ];
 
 #[test]

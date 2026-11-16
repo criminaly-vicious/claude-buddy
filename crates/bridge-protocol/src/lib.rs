@@ -35,6 +35,7 @@ pub mod limits {
     pub const NOTIFICATION_TYPE: usize = 32;
     pub const START_SOURCE: usize = 16;
     pub const AGENT_ID: usize = 64;
+    pub const AGENT_TYPE: usize = 64;
 }
 
 /// Hook events the server maps to registry events (or knowingly ignores).
@@ -105,6 +106,9 @@ pub struct EventBody {
     pub start_source: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_id: Option<String>,
+    /// The subagent's type (`Explore`), beside `agent_id`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_type: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -176,6 +180,7 @@ impl EventBody {
             (&mut self.notification_type, limits::NOTIFICATION_TYPE),
             (&mut self.start_source, limits::START_SOURCE),
             (&mut self.agent_id, limits::AGENT_ID),
+            (&mut self.agent_type, limits::AGENT_TYPE),
         ] {
             if let Some(s) = value {
                 clamp(s, max);
@@ -183,7 +188,7 @@ impl EventBody {
         }
     }
 
-    fn strings(&self) -> [(&'static str, Option<&str>, usize); 8] {
+    fn strings(&self) -> [(&'static str, Option<&str>, usize); 9] {
         [
             ("event", Some(self.event.as_str()), limits::EVENT),
             (
@@ -205,6 +210,7 @@ impl EventBody {
                 limits::START_SOURCE,
             ),
             ("agent_id", self.agent_id.as_deref(), limits::AGENT_ID),
+            ("agent_type", self.agent_type.as_deref(), limits::AGENT_TYPE),
         ]
     }
 }

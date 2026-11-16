@@ -2,15 +2,16 @@
  * What is on screen: one buddy per session, the frame its animation
  * controller shows now, where it stands in the group layout, the `+N` chip,
  * the speech bubbles over it, and the hit regions. Buddies whose slot moves
- * walk there (`walk` clip); buddies on an excursion (thrown, strolling,
+ * walk there (`walk_left` / `walk_right`); buddies on an excursion (thrown, strolling,
  * visiting another buddy) are drawn wherever the excursion puts them.
  * Pure (time and randomness are passed in), so it is tested without a canvas.
  */
 
 import { Atlas, Clip, Frame, frameAt } from "../sprites/atlas";
-import type { SessionView } from "../types";
-import { AnimationController, ControllerOptions } from "./controller";
+import type { SessionView, SubagentView } from "../types";
+import { AnimationController, ControllerOptions, phaseOf } from "./controller";
 import { Excursion, Room, Stroll, Visit } from "./excursion";
+import { Carrier, MINI_BOX, MiniClips, miniKey, MiniStack, parseMiniKey, stackRise } from "./minis";
 import { FloorPosition, layout, toCanvas } from "./layout";
 import type { Corner, HitRegion } from "./native";
 import { Bounds, Point, Throw, ThrowClips } from "./throw";
@@ -30,6 +31,8 @@ const STEP = 4;
 const WALK_SPEED = 64;
 /** Strolls and visits are a little slower, in sprite pixels per second. */
 const STROLL_SPEED = 40;
+/** Minis walking back after a throw, on their little legs, in sprite pixels per second. */
+const MINI_WALK_SPEED = 48;
 /** Redraw interval while something flies or hops (the loop caps at 30 fps anyway). */
 const MOVE_FRAME_MS = 1000 / 30;
 /** Redraw interval while buddies walk: 20 fps is plenty for pixel art at walking pace. */
@@ -101,6 +104,8 @@ export interface PlacedSprite {
    * the hit region stay at the buddy's place, so the balloon does not bounce.
    */
   hop: number;
+  /** Set for a mini Clawd (a subagent): its buddy and whether it is on the stack. */
+  mini?: { parent: string; view: SubagentView; stacked: boolean };
 }
 
 /** A bubble drawn over a buddy (same cell as its sprite), with no hit region. */
@@ -155,17 +160,11 @@ interface Buddy {
   hopAt: number | null;
   /** When this buddy may go for its next stroll; `null` until scheduled. */
   strollAt: number | null;
+  /** Its subagents, as mini Clawds on its head (#84). */
+  minis: MiniStack;
 }
 
-/** A stable 0..1 number for a session id: its buddy's place in its animation loops. */
-export function phaseOf(id: string): number {
-  let hash = 2166136261;
-  for (let i = 0; i < id.length; i++) {
-    hash ^= id.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0) / 4294967296;
-}
+export { phaseOf };
 
 /** A throw seen as an excursion; the scene still drags and releases it. */
 class Thrown implements Excursion {
@@ -192,7 +191,6 @@ export class Scene {
   private chipRegion: HitRegion | null = null;
   /** When the slots last changed, so walks start then, not at the next render. */
   private layoutChangedAt = 0;
-  private readonly walkClip: Clip;
   private readonly throwClips: ThrowClips;
   private readonly clips: {
     walkLeft: Clip;
@@ -222,6 +220,7 @@ export class Scene {
   private readonly strolls: StrollTiming;
   /** No stroll starts before this, so a big group is not always on the move. */
   private nextStrollAnyAt = 0;
+  private readonly miniClips: MiniClips;
 
   constructor(
     private readonly atlas: Atlas,
@@ -232,15 +231,14 @@ export class Scene {
       if (!found) throw new Error(`atlas has no "${name}" animation`);
       return found;
     };
-    const walk = clip("walk");
-    this.walkClip = walk;
     this.throwClips = {
       grabbed: clip("grabbed"),
       fly: clip("fly"),
       land: clip("land"),
       land_splat: clip("land_splat"),
       dizzy: clip("dizzy"),
-      walk,
+      walkLeft: clip("walk_left"),
+      walkRight: clip("walk_right"),
     };
     this.clips = {
       walkLeft: clip("walk_left"),
@@ -250,6 +248,17 @@ export class Scene {
       standUp: clip("stand_up"),
       fxTalk: clip("fx_talk"),
       fxReply: clip("fx_reply"),
+    };
+    this.miniClips = {
+      work: clip("mini_work"),
+      balance: clip("mini_balance"),
+      pop: clip("mini_pop"),
+      poof: clip("mini_poof"),
+      fly: clip("mini_fly"),
+      land: clip("mini_land"),
+      jump: clip("mini_jump"),
+      walkLeft: clip("mini_walk_left"),
+      walkRight: clip("mini_walk_right"),
     };
     this.random = options.random ?? Math.random;
     this.strolls = options.strolls ?? DEFAULT_STROLLS;
@@ -261,9 +270,13 @@ export class Scene {
     for (const buddy of this.buddies.values()) buddy.animation.setReduceMotion(on, now);
   }
 
-  /** Whether any buddy is held, flying or on its way back from a throw. */
+  /** Whether any buddy (or mini) is held, flying or on its way back from a throw. */
   get busy(): boolean {
-    return [...this.away.values()].some((e) => e instanceof Thrown);
+    return [...this.away.values()].some((e) => e instanceof Thrown) || this.minisLoose();
+  }
+
+  private minisLoose(): boolean {
+    return [...this.buddies.values()].some((b) => b.minis.loose);
   }
 
   /**
@@ -271,6 +284,8 @@ export class Scene {
    * a floor strip while someone strolls, nothing otherwise.
    */
   roomNeeded(): "work" | "floor" | null {
+    // Scattered minis may be anywhere a throw can reach.
+    if (this.minisLoose()) return "work";
     let need: "work" | "floor" | null = null;
     for (const e of this.away.values()) {
       if (e.room === "work") return "work";
@@ -283,9 +298,9 @@ export class Scene {
     return this.away.get(id) instanceof Thrown;
   }
 
-  /** The buddy under the pointer: it never wanders off while you look at it. */
+  /** The buddy under the pointer (or under a mini on it): it never wanders off while you look at it. */
   setHovered(id: string | null): void {
-    this.hovered = id;
+    this.hovered = id === null ? null : (parseMiniKey(id)?.parent ?? id);
   }
 
   /** The area buddies may go (the expanded overlay), home-relative CSS px. */
@@ -294,6 +309,7 @@ export class Scene {
     for (const e of this.away.values()) {
       if (e instanceof Thrown) e.flight.setBounds(this.bounds());
     }
+    for (const buddy of this.buddies.values()) buddy.minis.setBounds(this.bounds());
   }
 
   /**
@@ -324,10 +340,20 @@ export class Scene {
     if (held instanceof Thrown) held.flight.drag(pointer, now);
   }
 
-  /** Lets go of the held buddy. */
+  /** Lets go of the held buddy; the minis on its head fly off, scattering. */
   release(now: number): void {
     const held = this.grabbed ? this.away.get(this.grabbed) : undefined;
-    if (held instanceof Thrown) held.flight.release(now);
+    const buddy = this.grabbed ? this.buddies.get(this.grabbed) : undefined;
+    if (held instanceof Thrown) {
+      held.flight.release(now);
+      buddy?.minis.scatter(
+        held.flight.velocity,
+        now,
+        this.bounds(),
+        this.scaleCss,
+        MINI_WALK_SPEED * this.scaleCss,
+      );
+    }
     this.grabbed = null;
   }
 
@@ -394,6 +420,14 @@ export class Scene {
     return this.buddies.get(id)?.view;
   }
 
+  /** The subagent behind a mini ({@link miniKey}) and its session, for its balloon. */
+  miniView(key: string): { parent: SessionView; subagent: SubagentView } | undefined {
+    const ref = parseMiniKey(key);
+    const parent = ref ? this.buddies.get(ref.parent)?.view : undefined;
+    const subagent = parent?.subagents?.find((s) => s.id === ref?.id);
+    return parent && subagent ? { parent, subagent } : undefined;
+  }
+
   get currentCorner(): Corner {
     return this.corner;
   }
@@ -428,6 +462,7 @@ export class Scene {
     if (existing) {
       existing.view = view;
       existing.animation.setState(view.state, now);
+      existing.minis.sync(view.subagents ?? [], now, this.flying(view.id));
       // Called away while strolling: walk back to the desk now.
       const out = this.away.get(view.id);
       if (view.state !== "idle" && out instanceof Stroll) out.recall(now);
@@ -444,7 +479,15 @@ export class Scene {
       walk: null,
       hopAt: null,
       strollAt: null,
+      minis: new MiniStack({ clips: this.miniClips, random: this.random }),
     });
+    this.buddies.get(view.id)?.minis.sync(view.subagents ?? [], now);
+  }
+
+  /** Thrown and let go: in the air, landing or walking back. */
+  private flying(id: string): boolean {
+    const away = this.away.get(id);
+    return away instanceof Thrown && away.flight.phase !== "grabbed";
   }
 
   /** The buddy does a small happy hop (its terminal was focused). */
@@ -509,19 +552,41 @@ export class Scene {
       x: Math.round(home.x + p.x * css),
       y: Math.round(home.y + p.y * css),
     });
-    const region = (x: number, y: number): HitRegion => ({
-      x: (x + BODY_BOX.x * pixel) / css,
-      y: (y + BODY_BOX.y * pixel) / css,
-      width: (BODY_BOX.width * pixel) / css,
-      height: (BODY_BOX.height * pixel) / css,
+    const boxRegion = (box: typeof BODY_BOX, x: number, y: number): HitRegion => ({
+      x: (x + box.x * pixel) / css,
+      y: (y + box.y * pixel) / css,
+      width: (box.width * pixel) / css,
+      height: (box.height * pixel) / css,
     });
+    const region = (x: number, y: number) => boxRegion(BODY_BOX, x, y);
+    const outward = this.corner.endsWith("right") ? -1 : 1;
 
     const sprites: PlacedSprite[] = [];
+    // Minis go over every buddy, so one walking back is never hidden.
+    const miniSprites: PlacedSprite[] = [];
     const effects: PlacedEffect[] = [];
     const regions: HitRegion[] = [];
     let nextChangeAt: number | null = null;
     const changeAt = (t: number | null) => {
       if (t !== null) nextChangeAt = nextChangeAt === null ? t : Math.min(nextChangeAt, t);
+    };
+
+    const drawMinis = (id: string, buddy: Buddy, carrier: Carrier | null) => {
+      const { placed, nextChangeAt: next } = buddy.minis.update(now, carrier);
+      changeAt(next);
+      for (const mini of placed) {
+        const { x, y } = toCanvasPoint(mini.at);
+        miniSprites.push({
+          id: miniKey(id, mini.view.id),
+          frame: mini.frame,
+          x,
+          y,
+          size,
+          hop: 0,
+          mini: { parent: id, view: mini.view, stacked: mini.stacked },
+        });
+        regions.push(boxRegion(MINI_BOX, x, y));
+      }
     };
 
     // Slots first: visits walk to the slot of the buddy they visit.
@@ -556,6 +621,16 @@ export class Scene {
           regions.push(region(x, y));
           this.placed.set(id, { x: shown.x, y: shown.y });
           this.pushEffects(id, x, y, size, now, effects, changeAt);
+          // Held, the minis cling on; let go, they are already off.
+          drawMinis(id, buddy, {
+            at: toHome({ x, y }),
+            frame: shown.frame,
+            slot,
+            outward,
+            home: false,
+            moving: true,
+            scale: this.scaleCss,
+          });
           changeAt(now + (away instanceof Thrown ? MOVE_FRAME_MS : WALK_FRAME_MS));
           continue;
         }
@@ -564,14 +639,19 @@ export class Scene {
         // Hidden behind the chip: placed afresh (no walk) when it reappears.
         buddy.offset = null;
         buddy.walk = null;
+        drawMinis(id, buddy, null);
         continue;
       }
       const offset = this.moveTowards(buddy, target.offset, now);
       const walking = buddy.walk !== null;
       let frame: Frame;
       if (walking) {
+        // Facing the way it goes: offsets grow away from the corner.
         const walk = buddy.walk as Walk;
-        frame = frameAt(this.walkClip, now - walk.startedAt, true).frame;
+        const outward = this.corner.endsWith("right") ? -1 : 1;
+        const left = Math.sign(walk.to - walk.from) * outward < 0;
+        const clip = left ? this.clips.walkLeft : this.clips.walkRight;
+        frame = frameAt(clip, now - walk.startedAt, true).frame;
         changeAt(now + WALK_FRAME_MS);
       } else {
         const showing = buddy.animation.current(now);
@@ -588,7 +668,17 @@ export class Scene {
       this.placed.set(id, toHome({ x, y }));
       regions.push(region(x, y));
       this.pushEffects(id, x, y + hop, size, now, effects, changeAt);
+      drawMinis(id, buddy, {
+        at: toHome({ x, y: y + hop }),
+        frame,
+        slot,
+        outward,
+        home: !walking,
+        moving: walking,
+        scale: this.scaleCss,
+      });
     }
+    sprites.push(...miniSprites);
 
     let chip: PlacedChip | null = null;
     this.chipRegion = null;
@@ -599,6 +689,11 @@ export class Scene {
       regions.push(this.chipRegion);
     }
 
+    // Room above the group for the tallest stack of minis.
+    let rise = 0;
+    for (const [id, buddy] of this.buddies) {
+      if (plan.buddies.has(id)) rise = Math.max(rise, stackRise(buddy.minis.size));
+    }
     return {
       sprites,
       effects,
@@ -606,7 +701,7 @@ export class Scene {
       regions,
       contentSize: {
         width: plan.extent.along * viewport.scale,
-        height: plan.extent.across * viewport.scale,
+        height: (plan.extent.across + rise) * viewport.scale,
       },
       nextChangeAt,
       pixel,

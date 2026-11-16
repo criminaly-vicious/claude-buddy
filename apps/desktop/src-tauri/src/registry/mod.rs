@@ -5,8 +5,8 @@
 //! Inputs are normalised [`RegistryEvent`]s (adapted from hooks by the bridge
 //! and from transcripts by the watcher). Outputs are [`Change`]s, which the app
 //! forwards to the overlay as `sessions:update` / `sessions:remove` /
-//! `sessions:interaction` events. See docs/session-detection.md#state-machine
-//! and #sessions-talking-to-each-other.
+//! `sessions:interaction` events. See docs/session-detection.md#state-machine,
+//! #subagents and #sessions-talking-to-each-other.
 
 mod tool_map;
 
@@ -33,6 +33,15 @@ pub const EVENT_INTERACTION: &str = "sessions:interaction";
 const MESSAGE_WINDOW_MS: Millis = 5_000;
 /// With only one other session around, it is the recipient after this long.
 const LONE_PAIR_MS: Millis = 1_500;
+
+/// A subagent silent for this long is taken to be gone, in case its
+/// `SubagentStop` never came (an interrupted turn, the app restarting).
+pub const SUBAGENT_TTL_MS: Millis = 10 * 60 * 1_000;
+/// The same for a subagent known only from its tools: hooks installed before
+/// subagents were followed send no `SubagentStart` or `SubagentStop`.
+pub const UNANNOUNCED_SUBAGENT_TTL_MS: Millis = 90 * 1_000;
+/// Subagents tracked per session, at most.
+const MAX_SUBAGENTS: usize = 16;
 
 const SUMMARY_MAX_CHARS: usize = 80;
 
@@ -73,7 +82,20 @@ pub enum EventKind {
     /// Permission prompt, question or idle prompt: the user is needed.
     NeedsInput,
     TurnEnded,
+    /// A subagent started; [`RegistryEvent::agent`] names it.
+    SubagentStarted,
+    /// A subagent finished; [`RegistryEvent::agent`] names it.
+    SubagentStopped,
     SessionEnded,
+}
+
+/// The subagent an event comes from.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Agent {
+    /// Claude Code's `agent_id`.
+    pub id: String,
+    /// Its `agent_type`, e.g. `Explore`.
+    pub kind: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -83,7 +105,25 @@ pub struct RegistryEvent {
     pub at: Millis,
     pub cwd: Option<String>,
     pub pid: Option<u32>,
+    /// Set when the event comes from inside a subagent.
+    pub agent: Option<Agent>,
     pub kind: EventKind,
+}
+
+/// A running subagent, shown as a mini buddy on its session's buddy.
+/// Mirrors `SubagentView` in apps/desktop/src/types.ts.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubagentView {
+    pub id: String,
+    /// Its type, e.g. `Explore`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+    pub since: Millis,
 }
 
 /// What the overlay sees. Mirrors `SessionView` in apps/desktop/src/types.ts.
@@ -102,6 +142,9 @@ pub struct SessionView {
     pub source: Source,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pid: Option<u32>,
+    /// Subagents running in this session, oldest first.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub subagents: Vec<SubagentView>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -166,6 +209,27 @@ struct Session {
     created_at: Millis,
     /// When the session's `claude` process was seen exiting.
     exited_at: Option<Millis>,
+    /// When each running subagent was last heard from, by id.
+    subagents_seen: HashMap<String, Seen>,
+}
+
+/// When a subagent was last heard from, and whether its start was reported.
+#[derive(Clone, Copy, Debug)]
+struct Seen {
+    at: Millis,
+    announced: bool,
+}
+
+impl Seen {
+    /// When the subagent counts as gone if nothing more is heard.
+    fn gone_at(&self) -> Millis {
+        let ttl = if self.announced {
+            SUBAGENT_TTL_MS
+        } else {
+            UNANNOUNCED_SUBAGENT_TTL_MS
+        };
+        self.at + ttl
+    }
 }
 
 #[derive(Debug, Default)]
@@ -243,9 +307,10 @@ impl Registry {
             changed = true;
         }
         changed |= session.absorb_metadata(&event);
+        changed |= session.track_subagent(&event);
         session.last_event_at = event.at;
 
-        let target = session.target_state(&event.kind);
+        let target = session.target_state(&event);
         if let Some(target) = target {
             changed |= session.request_state(target, event.at, &config);
         }
@@ -411,6 +476,7 @@ impl Registry {
                 continue;
             }
 
+            let dropped = session.drop_silent_subagents(now);
             let next = if session.is_expired(now, &config) {
                 Some(BuddyState::Leaving)
             } else if let Some(pending) = session.pending {
@@ -424,10 +490,9 @@ impl Registry {
                 None
             };
 
-            if let Some(next) = next {
-                if session.request_state(next, now, &config) {
-                    changes.push(Change::Update(session.view.clone()));
-                }
+            let moved = next.is_some_and(|next| session.request_state(next, now, &config));
+            if moved || dropped {
+                changes.push(Change::Update(session.view.clone()));
             }
         }
 
@@ -456,7 +521,8 @@ impl Registry {
                     (None, BuddyState::Idle) => Some(s.last_event_at + c.idle_timeout_ms),
                     _ => None,
                 };
-                [state_deadline, s.expiry_deadline(c)]
+                let silent = s.subagents_seen.values().map(Seen::gone_at).min();
+                [state_deadline, s.expiry_deadline(c), silent]
                     .into_iter()
                     .flatten()
                     .min()
@@ -484,16 +550,19 @@ impl Registry {
                 since: event.at,
                 source: event.source,
                 pid: event.pid,
+                subagents: Vec::new(),
             },
             pending: None,
             last_event_at: event.at,
             created_at: event.at,
             exited_at: None,
+            subagents_seen: HashMap::new(),
         };
         session.absorb_metadata(&event);
+        session.track_subagent(&event);
         // A session first seen mid-turn still spawns, then shows what it is doing.
         session.pending = session
-            .target_state(&event.kind)
+            .target_state(&event)
             .filter(|s| *s != BuddyState::Spawning);
         let view = session.view.clone();
         self.sessions.insert(event.session_id, session);
@@ -526,18 +595,23 @@ impl Session {
     }
 
     /// The state the event asks for, or `None` to keep the current one.
-    fn target_state(&self, kind: &EventKind) -> Option<BuddyState> {
+    fn target_state(&self, event: &RegistryEvent) -> Option<BuddyState> {
         let current = self.pending.unwrap_or(self.view.state);
-        let target = match kind {
+        // A tool starting means the user answered, even for TodoWrite.
+        let answered = (current == BuddyState::Waiting).then_some(BuddyState::Working);
+        let from_subagent = event.agent.is_some();
+        let target = match &event.kind {
             EventKind::SessionStarted => None,
             EventKind::PromptSubmitted => Some(BuddyState::Working),
-            EventKind::ToolStarted { tool, .. } => state_for_tool(tool).or(
-                // A tool starting means the user answered, even for TodoWrite.
-                (current == BuddyState::Waiting).then_some(BuddyState::Working),
-            ),
+            // A subagent's tools show on its mini buddy, not on the parent.
+            EventKind::ToolStarted { .. } if from_subagent => answered,
+            EventKind::ToolStarted { tool, .. } => state_for_tool(tool).or(answered),
             EventKind::ToolFinished { .. } => None,
             EventKind::NeedsInput => Some(BuddyState::Waiting),
+            // A subagent finishing is not the end of the parent's turn.
+            EventKind::TurnEnded if from_subagent => None,
             EventKind::TurnEnded => Some(BuddyState::Idle),
+            EventKind::SubagentStarted | EventKind::SubagentStopped => None,
             EventKind::SessionEnded => Some(BuddyState::Leaving),
         };
         // Any activity wakes a sleeping buddy.
@@ -556,15 +630,90 @@ impl Session {
         if event.pid.is_some() {
             self.view.pid = event.pid;
         }
-        match &event.kind {
-            EventKind::ToolStarted { tool, summary, .. } => {
-                self.view.tool = Some(tool.clone());
-                self.view.summary = summary.as_deref().map(truncate);
+        // A subagent's tools are its own (see `track_subagent`).
+        if event.agent.is_none() {
+            match &event.kind {
+                EventKind::ToolStarted { tool, summary, .. } => {
+                    self.view.tool = Some(tool.clone());
+                    self.view.summary = summary.as_deref().map(truncate);
+                }
+                EventKind::ToolFinished { tool } => self.view.tool = Some(tool.clone()),
+                _ => {}
             }
-            EventKind::ToolFinished { tool } => self.view.tool = Some(tool.clone()),
-            _ => {}
         }
         before != self.view
+    }
+
+    /// Starts, updates or ends the subagent an event comes from
+    /// (docs/session-detection.md#subagents). A subagent starts with
+    /// `SubagentStart` or its first tool, so hooks that miss the start still
+    /// show it. Returns whether the view changed.
+    fn track_subagent(&mut self, event: &RegistryEvent) -> bool {
+        let Some(agent) = &event.agent else {
+            return false;
+        };
+        if matches!(
+            event.kind,
+            EventKind::SubagentStopped | EventKind::TurnEnded
+        ) {
+            self.subagents_seen.remove(&agent.id);
+            let before = self.view.subagents.len();
+            self.view.subagents.retain(|s| s.id != agent.id);
+            return self.view.subagents.len() != before;
+        }
+        if event.kind == EventKind::SessionEnded || self.view.state == BuddyState::Leaving {
+            return false;
+        }
+        let (index, added) = match self.view.subagents.iter().position(|s| s.id == agent.id) {
+            Some(index) => (index, false),
+            None if self.view.subagents.len() < MAX_SUBAGENTS => {
+                self.view.subagents.push(SubagentView {
+                    id: agent.id.clone(),
+                    kind: None,
+                    tool: None,
+                    summary: None,
+                    since: event.at,
+                });
+                (self.view.subagents.len() - 1, true)
+            }
+            None => return false,
+        };
+        let announced = event.kind == EventKind::SubagentStarted
+            || self
+                .subagents_seen
+                .get(&agent.id)
+                .is_some_and(|s| s.announced);
+        self.subagents_seen.insert(
+            agent.id.clone(),
+            Seen {
+                at: event.at,
+                announced,
+            },
+        );
+        let subagent = &mut self.view.subagents[index];
+        let before = subagent.clone();
+        if agent.kind.is_some() {
+            subagent.kind = agent.kind.clone();
+        }
+        match &event.kind {
+            EventKind::ToolStarted { tool, summary, .. } => {
+                subagent.tool = Some(tool.clone());
+                subagent.summary = summary.as_deref().map(truncate);
+            }
+            EventKind::ToolFinished { tool } => subagent.tool = Some(tool.clone()),
+            _ => {}
+        }
+        added || *subagent != before
+    }
+
+    /// Drops subagents silent for too long (see [`Seen::gone_at`]). Returns
+    /// whether any went.
+    fn drop_silent_subagents(&mut self, now: Millis) -> bool {
+        self.subagents_seen.retain(|_, seen| now < seen.gone_at());
+        let seen = &self.subagents_seen;
+        let before = self.view.subagents.len();
+        self.view.subagents.retain(|s| seen.contains_key(&s.id));
+        self.view.subagents.len() != before
     }
 
     /// Moves to `target` now, or queues it until the current state has been
@@ -581,6 +730,11 @@ impl Session {
             self.view.state = target;
             self.view.since = now;
             self.pending = None;
+            if target == BuddyState::Leaving {
+                // The minis go with their buddy.
+                self.view.subagents.clear();
+                self.subagents_seen.clear();
+            }
             true
         } else {
             self.pending = Some(target);

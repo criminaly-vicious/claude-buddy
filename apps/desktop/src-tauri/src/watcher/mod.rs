@@ -149,6 +149,7 @@ impl State {
                 at: (self.clock)(),
                 cwd: line.cwd,
                 pid: None,
+                agent: None,
                 kind,
             }));
         }

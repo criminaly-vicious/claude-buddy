@@ -25,7 +25,8 @@ const clips: ThrowClips = {
   land: clip("land"),
   land_splat: clip("land_splat"),
   dizzy: clip("dizzy"),
-  walk: clip("walk"),
+  walkLeft: clip("walk_left"),
+  walkRight: clip("walk_right"),
 };
 /** A 1000x600 work area for a 64 px sprite. */
 const bounds: Bounds = { left: 0, top: 0, right: 936, bottom: 536 };

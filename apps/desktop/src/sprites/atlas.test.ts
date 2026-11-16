@@ -16,13 +16,23 @@ const SPEC_ANIMATIONS = [
   "stand_up",
   "wait_wave",
   "sleep",
-  "walk",
+  "walk_left",
+  "walk_right",
   "grabbed",
   "fly",
   "land",
   "land_splat",
   "dizzy",
   "leave",
+  "mini_work",
+  "mini_balance",
+  "mini_pop",
+  "mini_poof",
+  "mini_fly",
+  "mini_land",
+  "mini_jump",
+  "mini_walk_left",
+  "mini_walk_right",
 ];
 
 const frame = (x: number, duration?: number) => ({ frame: { x, y: 0, w: 32, h: 32 }, duration });
@@ -77,6 +87,16 @@ describe("parseAtlas", () => {
     const atlas = parseAtlas(buddy);
     expect(() => requireClips(atlas, SPEC_ANIMATIONS)).not.toThrow();
     expect(() => requireClips(atlas, ["nope"])).toThrow(/nope/);
+  });
+
+  it("knows where the head is in each buddy frame, for minis to stand on", () => {
+    const atlas = parseAtlas(buddy);
+    const head = (clip: string) => atlas.clips.get(clip)!.frames[0].head;
+    expect(head("idle")).toBe(14);
+    // Sitting is lower, a mini's head much lower; a puff has none.
+    expect(head("work_type")).toBe(17);
+    expect(head("mini_work")).toBe(21);
+    expect(head("fx_talk")).toBeUndefined();
   });
 });
 

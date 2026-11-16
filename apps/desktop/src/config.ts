@@ -59,6 +59,8 @@ export function listMonitors(): Promise<MonitorInfo[]> {
 export interface HookStatus {
   /** `null` when it could not be checked. */
   installed: boolean | null;
+  /** Some of Claude Buddy's hooks are there but not all: an older install. */
+  outdated?: boolean;
   settingsPath: string | null;
   /** Epoch ms of the last hook event since Claude Buddy started. */
   lastEventAt: number | null;

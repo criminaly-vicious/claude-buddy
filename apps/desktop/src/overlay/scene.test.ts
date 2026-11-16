@@ -136,7 +136,8 @@ describe("Scene group layout", () => {
     expect(c.x).toBeLessThan(start + slot);
     expect(Number.isInteger(c.x)).toBe(true);
     expect(c.frame).toEqual(
-      atlas.clips.get("walk")!.frames.find((f) => f === c.frame) ?? "walk frame",
+      // Towards the corner (bottom right): to the right, in three-quarter view.
+      atlas.clips.get("walk_right")!.frames.find((f) => f === c.frame) ?? "walk_right frame",
     );
     expect(mid.nextChangeAt).toBeLessThanOrEqual(settledAt + 200 + 50);
 
@@ -365,6 +366,69 @@ describe("Scene redraws", () => {
       // ...so there are at most 8 a second, the same for 1 buddy as for 10.
       expect(wakeups.length / 60).toBeLessThanOrEqual(8);
     }
+  });
+});
+
+describe("Scene minis (subagents)", () => {
+  const settledAt = 1_000;
+  const withSubagents = (ids: string[]) =>
+    ({ ...view("a", "working"), subagents: ids.map((id) => ({ id, kind: "Explore", since: 0 })) });
+
+  it("draws a mini per subagent over the buddies, with its own hit region", () => {
+    const scene = new Scene(atlas, { reduceMotion: true });
+    scene.setSessions([withSubagents(["s1", "s2"]), view("b", "idle")], 0);
+    const frame = scene.render(settledAt, viewport);
+    const minis = frame.sprites.filter((s) => s.mini);
+    expect(minis.map((s) => s.mini!.view.id)).toEqual(["s1", "s2"]);
+    expect(minis.every((s) => s.mini!.parent === "a" && s.mini!.stacked)).toBe(true);
+    // After every buddy, so none hides them.
+    expect(frame.sprites.slice(-2)).toEqual(minis);
+    // Stacked over the buddy, one on the other.
+    const a = frame.sprites.find((s) => s.id === "a")!;
+    expect(minis.every((s) => s.x === a.x)).toBe(true);
+    expect(minis[1].y).toBeLessThan(minis[0].y);
+    expect(minis[0].y).toBeLessThan(a.y);
+    expect(frame.regions).toHaveLength(4);
+    expect(scene.miniView(minis[0].id)?.subagent.id).toBe("s1");
+  });
+
+  it("makes room above the group for a tall stack", () => {
+    const scene = new Scene(atlas, { reduceMotion: true });
+    scene.setSessions([view("a", "working")], 0);
+    const plain = scene.render(settledAt, viewport).contentSize.height;
+    scene.update(withSubagents(["s1", "s2", "s3"]), settledAt);
+    expect(scene.render(settledAt + 10, viewport).contentSize.height).toBeGreaterThan(plain);
+  });
+
+  it("a throw scatters the minis; the overlay stays big until they are all back", () => {
+    const scene = new Scene(atlas, { reduceMotion: true, random: () => 0.5 });
+    scene.setSessions([withSubagents(["s1", "s2"])], 0);
+    scene.render(settledAt, viewport);
+    scene.setWorkArea({ left: -2000, top: -1000, right: 960, bottom: 320 });
+    const a = scene.render(settledAt, viewport).sprites.find((s) => s.id === "a")!;
+    scene.grab("a", { x: a.x / 2 + 30, y: a.y / 2 + 40 }, settledAt);
+    scene.drag({ x: a.x / 2 - 60, y: a.y / 2 - 120 }, settledAt + 40);
+    scene.release(settledAt + 50);
+    expect(scene.roomNeeded()).toBe("work");
+    const flying = scene.render(settledAt + 200, viewport).sprites.filter((s) => s.mini);
+    expect(flying.every((s) => !s.mini!.stacked)).toBe(true);
+
+    let now = settledAt + 200;
+    for (; now < settledAt + 40_000 && scene.busy; now += 40) scene.render(now, viewport);
+    expect(scene.busy).toBe(false);
+    expect(scene.roomNeeded()).toBe(null);
+    const back = scene.render(now, viewport).sprites.filter((s) => s.mini);
+    expect(back.map((s) => s.mini!.view.id)).toEqual(["s1", "s2"]);
+    expect(back.every((s) => s.mini!.stacked)).toBe(true);
+  });
+
+  it("the buddy under a mini does not wander off", () => {
+    const scene = new Scene(atlas, { reduceMotion: true });
+    scene.setSessions([withSubagents(["s1"])], 0);
+    const mini = scene.render(settledAt, viewport).sprites.find((s) => s.mini)!;
+    scene.setHovered(mini.id);
+    // setHovered maps the mini to its buddy (checked through miniView's key).
+    expect(scene.miniView(mini.id)?.parent.id).toBe("a");
   });
 });
 

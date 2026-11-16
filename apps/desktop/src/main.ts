@@ -5,7 +5,8 @@ import atlasUrl from "./sprites/buddy/atlas.png";
 import { HitRegionSync } from "./overlay/hitSync";
 import { RenderLoop } from "./overlay/loop";
 import { activeLayout, flightArea, homeArea } from "./overlay/expand";
-import { balloonLines, HoverState, placeCard, Rect } from "./overlay/hoverCard";
+import { balloonLines, HoverState, miniBalloonLines, placeCard, Rect } from "./overlay/hoverCard";
+import { MINI_BOX, parseMiniKey } from "./overlay/minis";
 import {
   expandOverlay,
   ExpandedLayout,
@@ -35,9 +36,17 @@ import { subscribeSessions } from "./overlay/sessions";
 /** Every animation the overlay plays; the atlas must have them all. */
 const OVERLAY_CLIPS = [
   ...CONTROLLER_CLIPS,
-  "walk",
   "walk_left",
   "walk_right",
+  "mini_work",
+  "mini_balance",
+  "mini_pop",
+  "mini_poof",
+  "mini_fly",
+  "mini_land",
+  "mini_jump",
+  "mini_walk_left",
+  "mini_walk_right",
   "talk",
   "fx_talk",
   "fx_reply",
@@ -163,21 +172,32 @@ async function start(): Promise<void> {
   const hover = new HoverState();
   /** The open balloon's rectangle in canvas pixels, for pointer tests. */
   let cardRect: Rect | null = null;
-  let sprites: { id: string; x: number; y: number; size: number }[] = [];
+  let sprites: { id: string; x: number; y: number; size: number; mini?: { parent: string; stacked: boolean } }[] =
+    [];
 
   /** Hidden from the tray: nothing is drawn and the loop sleeps. */
   let hiddenByUser = false;
 
-  /** Clawd's part of a sprite cell, in canvas pixels. */
-  const bodyOf = (s: { x: number; y: number; size: number }): Rect => {
+  /** Clawd's (or a mini's) part of a sprite cell, in canvas pixels. */
+  const bodyOf = (s: { x: number; y: number; size: number; mini?: unknown }): Rect => {
     const px = s.size / 32;
+    const box = s.mini ? MINI_BOX : BODY_BOX;
     return {
-      x: s.x + BODY_BOX.x * px,
-      y: s.y + BODY_BOX.y * px,
-      width: BODY_BOX.width * px,
-      height: BODY_BOX.height * px,
+      x: s.x + box.x * px,
+      y: s.y + box.y * px,
+      width: box.width * px,
+      height: box.height * px,
     };
   };
+  /** A buddy with the minis standing on its head: its balloon goes over them all. */
+  const stackOf = (id: string, body: Rect): Rect => {
+    const top = sprites
+      .filter((s) => s.mini?.parent === id && s.mini.stacked)
+      .reduce((y, s) => Math.min(y, bodyOf(s).y), body.y);
+    return { ...body, y: top, height: body.y + body.height - top };
+  };
+  /** Clicks and drags on a mini act on its buddy. */
+  const buddyOf = (id: string) => parseMiniKey(id)?.parent ?? id;
 
   const loop = new RenderLoop((now) => {
     // Hidden overlay: draw nothing and sleep until it is shown again.
@@ -193,16 +213,21 @@ async function start(): Promise<void> {
     let next = frame.nextChangeAt;
     cardRect = null;
     const openId = hover.openId(now);
-    const sprite = openId && !scene.isThrown(openId) && frame.sprites.find((s) => s.id === openId);
-    const view = openId ? scene.view(openId) : undefined;
+    const sprite =
+      openId && !scene.isThrown(buddyOf(openId)) && frame.sprites.find((s) => s.id === openId);
+    const mini = openId ? scene.miniView(openId) : undefined;
+    const view = openId ? (mini?.parent ?? scene.view(openId)) : undefined;
     if (sprite && view) {
       const px = frame.pixel;
-      const body = bodyOf(sprite);
-      const measured = measureBalloon(ctx, balloonLines(view, Date.now()), dpr, px);
+      const body = sprite.mini ? bodyOf(sprite) : stackOf(sprite.id, bodyOf(sprite));
+      const lines = mini
+        ? miniBalloonLines(mini.subagent, mini.parent, Date.now())
+        : balloonLines(view, Date.now());
+      const measured = measureBalloon(ctx, lines, dpr, px);
       const gap = (TAIL_ROWS + 1) * px;
       cardRect = placeCard(body, measured, vp, scene.currentCorner, gap);
       const up = !scene.currentCorner.startsWith("bottom");
-      drawBalloon(ctx, cardRect, measured.lines, view.state, dpr, px, {
+      drawBalloon(ctx, cardRect, measured.lines, mini ? "working" : view.state, dpr, px, {
         x: body.x + body.width / 2,
         up,
       });
@@ -217,7 +242,8 @@ async function start(): Promise<void> {
       });
     }
     // The elapsed time is wall-clock based; express its start on this clock.
-    const since = view ? view.since - (Date.now() - now) : null;
+    const started = mini ? mini.subagent.since : view?.since;
+    const since = started === undefined ? null : started - (Date.now() - now);
     const hoverNext = hover.nextChangeAt(now, since);
     if (hoverNext !== null) next = next === null ? hoverNext : Math.min(next, hoverNext);
 
@@ -252,7 +278,7 @@ async function start(): Promise<void> {
   });
 
   function startDrag(id: string, from: { x: number; y: number }, now: number): void {
-    if (!scene.grab(id, toHome(from.x, from.y), now)) return;
+    if (!scene.grab(buddyOf(id), toHome(from.x, from.y), now)) return;
     dragging = true;
     hover.pointer(null, now);
     // Until the overlay has grown to the work area, the buddy flies inside
@@ -317,8 +343,9 @@ async function start(): Promise<void> {
 
   // Click on a buddy: focus its terminal; it hops when that worked. The
   // browser mock has no terminals, so it always hops.
-  function click(id: string, event: PointerEvent): void {
-    if (pointerTarget(event.offsetX, event.offsetY) !== id) return;
+  function click(target: string, event: PointerEvent): void {
+    if (pointerTarget(event.offsetX, event.offsetY) !== target) return;
+    const id = buddyOf(target);
     const focused = inTauri ? focusSession(id) : Promise.resolve(true);
     focused
       .then((ok) => {

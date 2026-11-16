@@ -11,6 +11,12 @@ export interface Frame {
   h: number;
   /** How long the frame shows, in ms. */
   duration: number;
+  /**
+   * The top row of the buddy's body in this frame, in sprite pixels from the
+   * frame's top: where a mini Clawd stands on its head. Not Aseprite's own;
+   * absent for frames without a body.
+   */
+  head?: number;
 }
 
 export interface Clip {
@@ -29,6 +35,7 @@ export interface Atlas {
 interface AsepriteFrame {
   frame: { x: number; y: number; w: number; h: number };
   duration?: number;
+  head?: number;
 }
 
 interface AsepriteJson {
@@ -51,12 +58,13 @@ export function parseAtlas(json: unknown): Atlas {
   }
   // Hash exports keep frames in file order as object keys.
   const raw = Array.isArray(data.frames) ? data.frames : Object.values(data.frames);
-  const frames: Frame[] = raw.map(({ frame, duration }) => ({
+  const frames: Frame[] = raw.map(({ frame, duration, head }) => ({
     x: frame.x,
     y: frame.y,
     w: frame.w,
     h: frame.h,
     duration: duration && duration > 0 ? duration : DEFAULT_DURATION_MS,
+    ...(typeof head === "number" ? { head } : {}),
   }));
 
   const clips = new Map<string, Clip>();

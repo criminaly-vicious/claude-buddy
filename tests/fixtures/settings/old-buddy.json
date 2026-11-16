@@ -30,6 +30,20 @@
           }
         ]
       }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C:\\Program Files\\Claude Buddy\\buddy-hook.exe",
+            "args": [
+              "PreCompact"
+            ],
+            "async": true
+          }
+        ]
+      }
     ]
   },
   "theme": "dark"
